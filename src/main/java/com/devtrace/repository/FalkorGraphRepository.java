@@ -187,6 +187,158 @@ public class FalkorGraphRepository implements GraphRepository {
         return Optional.of(new DependencyPath(fromServiceId, toServiceId, Collections.unmodifiableList(path), hopCount));
     }
 
+    @Override
+    public List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds) {
+        if (errorSignatureId == null || errorSignatureId.isBlank() || candidateServiceIds == null || candidateServiceIds.isEmpty()) {
+            return List.of();
+        }
+
+        Graph graph = driver.graph(graphName);
+        String cypher = """
+            MATCH (i:Incident)-[:EXHIBITS]->(e:ErrorSignature {id: $sigId})
+            MATCH (i)-[:AFFECTS]->(s:Service)
+            WHERE s.id IN $serviceIds
+            OPTIONAL MATCH (r:Resolution)-[:RESOLVES]->(i)
+            RETURN i.id AS incidentId, i.title AS title, i.status AS status, e.id AS errorSignatureId,
+                   collect(DISTINCT s.id) AS affectedServiceIds,
+                   r.id AS resId, r.title AS resTitle, r.remediationType AS resRemediationType,
+                   r.actionTaken AS resActionTaken, r.confirmedAt AS resConfirmedAt, r.confirmedBy AS resConfirmedBy
+            ORDER BY i.reportedAt DESC
+        """;
+
+        Map<String, Object> params = Map.of(
+                "sigId", errorSignatureId,
+                "serviceIds", new ArrayList<>(candidateServiceIds)
+        );
+
+        ResultSet rs = graph.readOnlyQuery(cypher, params);
+        List<SimilarIncidentRecord> records = new ArrayList<>();
+
+        for (Record rec : rs) {
+            String incidentId = rec.getString("incidentId");
+            String title = rec.getString("title");
+            String status = rec.getString("status");
+            String sigId = rec.getString("errorSignatureId");
+            List<String> affectedServices = extractStringList(rec.getValue("affectedServiceIds"));
+
+            List<String> matchReasons = List.of(
+                    "Matches ErrorSignature: " + sigId,
+                    "Affects candidate service(s): " + String.join(", ", affectedServices),
+                    "Service is within topological candidate neighborhood"
+            );
+
+            ResolutionRecord resRecord = null;
+            Object resIdObj = rec.getValue("resId");
+            if (resIdObj != null && !resIdObj.toString().isBlank()) {
+                String resId = resIdObj.toString();
+                String resTitle = rec.getString("resTitle");
+                String resRemediationType = rec.getString("resRemediationType");
+                String resActionTaken = rec.getString("resActionTaken");
+                long resConfirmedAt = ((Number) rec.getValue("resConfirmedAt")).longValue();
+                String resConfirmedBy = rec.getString("resConfirmedBy");
+
+                resRecord = new ResolutionRecord(resId, resTitle, resRemediationType, resActionTaken, resConfirmedAt, resConfirmedBy);
+            }
+
+            records.add(new SimilarIncidentRecord(incidentId, title, sigId, affectedServices, status, matchReasons, resRecord));
+        }
+
+        return Collections.unmodifiableList(records);
+    }
+
+    @Override
+    public List<DeploymentRecord> findRecentDeployments(String graphName, Set<String> serviceIds, long windowStart, long windowEnd) {
+        if (serviceIds == null || serviceIds.isEmpty() || windowStart > windowEnd) {
+            return List.of();
+        }
+
+        Graph graph = driver.graph(graphName);
+        String cypher = """
+            MATCH (d:Deployment)-[:DEPLOYED_TO]->(s:Service)
+            WHERE s.id IN $serviceIds AND d.deployedAt >= $windowStart AND d.deployedAt <= $windowEnd
+            RETURN d.id AS deploymentId, s.id AS serviceId, d.version AS version,
+                   d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy
+            ORDER BY d.deployedAt DESC
+        """;
+
+        Map<String, Object> params = Map.of(
+                "serviceIds", new ArrayList<>(serviceIds),
+                "windowStart", windowStart,
+                "windowEnd", windowEnd
+        );
+
+        ResultSet rs = graph.readOnlyQuery(cypher, params);
+        List<DeploymentRecord> deployments = new ArrayList<>();
+
+        for (Record rec : rs) {
+            String deploymentId = rec.getString("deploymentId");
+            String serviceId = rec.getString("serviceId");
+            String version = rec.getString("version");
+            long deployedAt = ((Number) rec.getValue("deployedAt")).longValue();
+            String env = rec.getString("environment");
+            String deployedBy = rec.getString("deployedBy");
+
+            deployments.add(new DeploymentRecord(deploymentId, serviceId, version, deployedAt, env, deployedBy));
+        }
+
+        return Collections.unmodifiableList(deployments);
+    }
+
+    @Override
+    public List<DeploymentRecord> findAllDeploymentsInWindow(String graphName, long windowStart, long windowEnd) {
+        if (windowStart > windowEnd) {
+            return List.of();
+        }
+
+        Graph graph = driver.graph(graphName);
+        String cypher = """
+            MATCH (d:Deployment)-[:DEPLOYED_TO]->(s:Service)
+            WHERE d.deployedAt >= $windowStart AND d.deployedAt <= $windowEnd
+            RETURN d.id AS deploymentId, s.id AS serviceId, d.version AS version,
+                   d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy
+            ORDER BY d.deployedAt DESC
+        """;
+
+        Map<String, Object> params = Map.of(
+                "windowStart", windowStart,
+                "windowEnd", windowEnd
+        );
+
+        ResultSet rs = graph.readOnlyQuery(cypher, params);
+        List<DeploymentRecord> deployments = new ArrayList<>();
+
+        for (Record rec : rs) {
+            String deploymentId = rec.getString("deploymentId");
+            String serviceId = rec.getString("serviceId");
+            String version = rec.getString("version");
+            long deployedAt = ((Number) rec.getValue("deployedAt")).longValue();
+            String env = rec.getString("environment");
+            String deployedBy = rec.getString("deployedBy");
+
+            deployments.add(new DeploymentRecord(deploymentId, serviceId, version, deployedAt, env, deployedBy));
+        }
+
+        return Collections.unmodifiableList(deployments);
+    }
+
+    @Override
+    public boolean recordExists(String graphName, String recordId) {
+        if (recordId == null || recordId.isBlank()) {
+            return false;
+        }
+
+        Graph graph = driver.graph(graphName);
+        String cypher = "MATCH (n {id: $recordId}) RETURN count(n) > 0 AS exists";
+        Map<String, Object> params = Map.of("recordId", recordId);
+
+        ResultSet rs = graph.readOnlyQuery(cypher, params);
+        Iterator<Record> it = rs.iterator();
+        if (it.hasNext()) {
+            return Boolean.TRUE.equals(it.next().getValue("exists"));
+        }
+        return false;
+    }
+
     private List<String> parseCommaSeparated(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();

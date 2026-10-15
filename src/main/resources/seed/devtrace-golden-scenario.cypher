@@ -68,16 +68,16 @@ ON MATCH SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment =
 
 // --- 3. Error Signatures ---
 MERGE (e:ErrorSignature {id: 'err-sig-payment-pool-timeout'})
-ON CREATE SET e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic'
-ON MATCH SET e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic';
+ON CREATE SET e.name = 'Payment Connection Pool Timeout', e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic'
+ON MATCH SET e.name = 'Payment Connection Pool Timeout', e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic';
 
 MERGE (e:ErrorSignature {id: 'err-sig-jwt-expired'})
-ON CREATE SET e.pattern = 'SignatureVerificationException / ClockSkew', e.errorType = 'AUTHENTICATION', e.keywords = 'jwt,expired token,token verification,clock skew,signature verification,auth timeout', e.source = 'synthetic'
-ON MATCH SET e.pattern = 'SignatureVerificationException / ClockSkew', e.errorType = 'AUTHENTICATION', e.keywords = 'jwt,expired token,token verification,clock skew,signature verification,auth timeout', e.source = 'synthetic';
+ON CREATE SET e.name = 'JWT Token Expired / Clock Skew', e.pattern = 'SignatureVerificationException / ClockSkew', e.errorType = 'AUTHENTICATION', e.keywords = 'jwt,expired token,token verification,clock skew,signature verification,auth timeout', e.source = 'synthetic'
+ON MATCH SET e.name = 'JWT Token Expired / Clock Skew', e.pattern = 'SignatureVerificationException / ClockSkew', e.errorType = 'AUTHENTICATION', e.keywords = 'jwt,expired token,token verification,clock skew,signature verification,auth timeout', e.source = 'synthetic';
 
 MERGE (e:ErrorSignature {id: 'err-sig-smtp-disconnect'})
-ON CREATE SET e.pattern = 'SMTPConnectionClosedException', e.errorType = 'NETWORK', e.keywords = 'smtp,disconnect,mail delivery,smtp connection lost', e.source = 'synthetic'
-ON MATCH SET e.pattern = 'SMTPConnectionClosedException', e.errorType = 'NETWORK', e.keywords = 'smtp,disconnect,mail delivery,smtp connection lost', e.source = 'synthetic';
+ON CREATE SET e.name = 'SMTP Connection Disconnected', e.pattern = 'SMTPConnectionClosedException', e.errorType = 'NETWORK', e.keywords = 'smtp,disconnect,mail delivery,smtp connection lost', e.source = 'synthetic'
+ON MATCH SET e.name = 'SMTP Connection Disconnected', e.pattern = 'SMTPConnectionClosedException', e.errorType = 'NETWORK', e.keywords = 'smtp,disconnect,mail delivery,smtp connection lost', e.source = 'synthetic';
 
 // --- 4. Historical Incidents ---
 MERGE (i:Incident {id: 'inc-2026-07-20-notif'})

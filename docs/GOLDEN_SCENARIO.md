@@ -116,11 +116,16 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
      - Returns: `["checkout-service", "order-service", "payment-service"]`.
   6. Historical resolution lookup: Finds `inc-2026-08-12-pay` exhibiting `err-sig-payment-pool-timeout` on `service-payment`.
 
-- **Qualitative Candidate Scoping & Hypotheses**:
-  - **Candidate Cause Scope**: Candidate root causes are strictly bounded to services within the downstream dependency neighborhood reachable from the symptom service.
-  - **Excluded Changes**: Deployments on disconnected services (`dep-notification-v1.8.0`) are NOT candidates and are not ranked; the investigation report explicitly records them under *"recent changes outside the dependency neighborhood, not considered"*.
-  - **Primary Suspect**: `dep-payment-v2.4.1` on `service-payment`. Reason: Although `inventory-service` has a more recent deployment (10m ago vs 30m ago) and is topologically closer (1 hop vs 2 hops), it exhibits zero error signature affinity. `payment-service` directly matches the technical error pattern (`err-sig-payment-pool-timeout`) and historical resolution `res-pay-timeout-fix`.
-  - *(Note: Detailed candidate cause ranking heuristic, component breakdown, and robustness tests will be formally implemented in Checkpoint 7).*
+- **Rule-Based Candidate Cause Ranking (Verified in Checkpoint 7)**:
+  - **Rank 1 (`STRONG` Tier)**: `service-payment` (`payment-service`, 2 hops).
+    - *Evidence*: Recent deployment `dep-payment-v2.4.1` (30m prior to $T_0$) AND historical incident `inc-2026-08-12-pay` matching error signature `err-sig-payment-pool-timeout`.
+    - *Confirmed Resolution*: `res-pay-timeout-fix` ("Increase Jedis pool timeout and rollback connection limit").
+  - **Rank 2 (`MODERATE` Tier)**: `service-inventory` (`inventory-service`, 1 hop).
+    - *Evidence*: Recent deployment `dep-inventory-v1.5.0` (10m prior to $T_0$), but zero error signature affinity and no past incidents.
+    - *Comparison*: Although topologically closer (1 hop vs 2 hops) and deployed more recently (10m vs 30m), `inventory-service` ranks below `payment-service` because proximity and recency are tie-breakers within tiers, never overriding multi-factor evidence.
+  - **Ranks 3–7 (`WEAK` Tier)**: `service-checkout` (0 hops), `service-order` (1 hop), `service-postgres-orders` (2 hops), `service-postgres-payments` (3 hops), `service-redis-cache` (3 hops).
+    - *Evidence*: Reachable in downstream dependency chain, but zero deployments in window and no historical signature matches.
+  - **Excluded Changes (`ignoredChanges`)**: `dep-notification-v1.8.0` on `service-notification`. Outside the candidate neighborhood; recorded as *"recent changes outside the dependency neighborhood, not considered"*.
 
 ---
 

@@ -166,3 +166,42 @@
   - *Reverse Failure-Propagation Principle*: Graph edges follow operational call chains `(caller)-[:DEPENDS_ON]->(callee)`, while blast radius and incident impact propagate backward `(callee)<-[:DEPENDS_ON]-(caller)`. Modeling callers as dependents correctly computes impact without mutating graph edge semantics.
   - *Single-Node Minimal Hop Deduplication*: In interconnected microservices, multiple paths of varying lengths can reach the same dependent. Grouping by node and aggregating `min(length(path))` ensures every affected service appears exactly once at its closest topological distance.
   - *Zero-Guess Entry Resolution*: Entry-point resolution never guesses. When text is ambiguous or lacks matches, DevTrace AI explicitly signals missing evidence rather than traversing random graph subtrees.
+
+## Checkpoint 7 — Historical Incident Retrieval, Candidate Generation, Tiered Ranking & Report Engine
+- **Date / Time**: 2026-10-15
+- **Verified Status**: All 15 unit tests passed (`mvn test` in 10.95s); all 18 failsafe integration tests passed (`mvn verify` in 15.70s); total 33 tests passed with 0 failures, 0 errors. Full Act 1 report verified as JSON.
+- **What Was Done**:
+  - **A. Reference Time Isolation**:
+    - Ranking logic never reads `System.currentTimeMillis()`. The reference timestamp is `request.startedAt()` from the caller. An injected `Clock` is used solely as fallback when missing, and that assumption is explicitly recorded in `report.assumptions()`.
+  - **B. Historical Retrieval (`findSimilarIncidents`)**:
+    - Implemented deterministic structured graph matching in `GraphRepository` and `FalkorGraphRepository`. Retrieval requires: (1) same `ErrorSignature`, (2) same affected service, (3) service inside candidate neighborhood. Wording similarity is strictly forbidden.
+    - Matches return incident ID, title, error signature, affected services, status, match reasons, and the confirmed `Resolution` record (id, summary, steps, confirmedAt, confirmedBy). Only confirmed resolutions are treated as "known resolutions".
+  - **C. Candidate Generation & Evidence Collection**:
+    - Generated candidate neighborhood from symptom service plus downstream dependencies within configurable depth (default 3).
+    - Collected verifiable `EvidenceItem` records for each candidate carrying exact FalkorDB entity IDs and repository query names:
+      - Deployments within configurable window before `startedAt` (default 24h; deployments after `startedAt` ignored).
+      - Error signature affinity through historical incidents.
+      - Confirmed historical resolutions.
+      - Hop distance from symptom service (informational only).
+    - Deployments on disconnected services (e.g. `notification-service`) are segregated into `ignoredChanges` with reason `"recent changes outside the dependency neighborhood, not considered"` and are never ranked.
+  - **D. Deterministic Rule-Based Tiering (Engine)**:
+    - Implemented rule-based tiers (`STRONG`, `MODERATE`, `WEAK`), strictly rejecting weighted scores and confidence percentages.
+    - Implemented deterministic sorting: Tier precedence -> recency descending -> hop distance ascending -> unique `serviceId` ascending.
+    - Proximity is a tie-breaker only and never outranks evidence: in Act 1, `payment-service` (2 hops, 30m prior, signature match) outranks `inventory-service` (1 hop, 10m prior, zero signature match).
+    - Implemented `INSUFFICIENT_EVIDENCE` status when no candidate reaches `MODERATE`: refuses to name a root cause and declares missing evidence.
+  - **E. Domain Report Model (`com.devtrace.model`)**:
+    - Implemented immutable Java records aligning with `docs/GOLDEN_SCENARIO.md`: `InvestigationReport`, `ObservedFacts`, `GraphRelationships`, `CandidateHypothesis`, `IgnoredChange`, `SuggestedNextStep`, `ResolutionRecord`, `SimilarIncidentRecord`, `DeploymentRecord`, `EvidenceItem`. Zero LLM dependencies anywhere in the pipeline.
+  - **F. Documentation**:
+    - Authored `docs/QUERIES.md`: cataloged all 8 Cypher queries with purpose, parameters, edge directionality, and live verified outputs.
+    - Authored `docs/RANKING.md`: documented the tiering framework, tie-breaking rules, parameter configuration, and uncalibrated heuristic limitations.
+    - Updated `docs/GOLDEN_SCENARIO.md` with verified tiers.
+  - **G. Unit & Integration Testing**:
+    - Unit tests (`DefaultInvestigationEngineTest`): 6 tests verifying all 4 tier combinations, recency ordering, deterministic tie-breaks, window boundaries, insufficient evidence path, and sensitivity invariance between 1h and 24h windows.
+    - Integration tests (`InvestigationEngineIT`):
+      - Act 1: Verified engine-computed order and tiers (payment #1 STRONG, inventory #2 MODERATE, notification in ignoredChanges, auth incident excluded, confirmed resolution next-step generated, all evidence IDs verified against FalkorDB).
+      - Act 3: Verified insufficient evidence path declares missing signature, missing deployments, and missing past incidents.
+      - Act 5: Verified empty graph produces `INSUFFICIENT_EVIDENCE` with zero candidates, then cleanly restores seeded state.
+- **Key Design Decisions**:
+  - *Rule-Based Tiers vs Weighted Scores*: Numeric confidence percentages provide an illusion of calibration. Discrete evidentiary tiers (`STRONG`, `MODERATE`, `WEAK`) give on-call engineers actionable explanations backed by verifiable graph evidence.
+  - *Proximity as Tie-Break Only*: Topological distance is secondary to domain evidence. A service closer to the symptom with recent changes must not outrank a slightly farther service that exhibits the exact technical error signature.
+  - *Zero-LLM Incident Analysis*: Core triage, ranking, dependency tracing, blast radius calculation, and resolution lookup execute entirely via deterministic Java algorithms and FalkorDB graph traversals, guaranteeing sub-second execution, zero hallucination, and full offline operation.

@@ -4,6 +4,7 @@ import com.devtrace.model.*;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface GraphRepository {
 
@@ -52,4 +53,46 @@ public interface GraphRepository {
      * @return Optional containing the DependencyPath if a directed path exists.
      */
     Optional<DependencyPath> findDependencyPath(String graphName, String fromServiceId, String toServiceId, int maxDepth);
+
+    /**
+     * Finds historical incidents via deterministic structured graph matching.
+     * Matching requires: (1) same ErrorSignature, (2) same affected service, (3) service inside candidate neighborhood.
+     * Wording similarity is strictly forbidden.
+     *
+     * @param graphName          Target graph.
+     * @param errorSignatureId   ErrorSignature ID matched from entry points.
+     * @param candidateServiceIds Candidate service IDs in the topological neighborhood.
+     * @return List of SimilarIncidentRecord instances including confirmed resolutions if present.
+     */
+    List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds);
+
+    /**
+     * Finds deployments on candidate services within a time window.
+     *
+     * @param graphName   Target graph.
+     * @param serviceIds  Set of candidate service IDs.
+     * @param windowStart Epoch ms start.
+     * @param windowEnd   Epoch ms end (reference startedAt).
+     * @return List of DeploymentRecord instances ordered by deployedAt DESC.
+     */
+    List<DeploymentRecord> findRecentDeployments(String graphName, Set<String> serviceIds, long windowStart, long windowEnd);
+
+    /**
+     * Finds all deployments in the time window across the entire graph.
+     *
+     * @param graphName   Target graph.
+     * @param windowStart Epoch ms start.
+     * @param windowEnd   Epoch ms end (reference startedAt).
+     * @return List of DeploymentRecord instances ordered by deployedAt DESC.
+     */
+    List<DeploymentRecord> findAllDeploymentsInWindow(String graphName, long windowStart, long windowEnd);
+
+    /**
+     * Checks whether a record with the given ID exists in the graph.
+     *
+     * @param graphName Target graph.
+     * @param recordId  Unique entity ID.
+     * @return true if an entity with this ID exists.
+     */
+    boolean recordExists(String graphName, String recordId);
 }
