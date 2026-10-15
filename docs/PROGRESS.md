@@ -56,4 +56,25 @@
   - Controlled swap over ephemeral ports: using compose for active local development tests reproducibility immediately while keeping the previous container as a non-destructive rollback.
   - Required password expansion (`${VAR:?error}`) prevents Docker Compose from silently starting an unauthenticated or partially configured container.
 
+## Checkpoint 3 — Compatible Spring Boot + MCP Baseline & Health Probe
+- **Date / Time**: 2026-10-15
+- **Verified Status**: Spike verified, dependencies aligned, tests passed (`BUILD SUCCESS`), live 200/503 health probe verified.
+- **What Was Done**:
+  - Performed volume persistence verification across container recreation: executed `docker compose down` (no `-v`) followed by `docker compose up -d`, and proved data survived via `FalkorConnectionTest`.
+  - Researched official Spring Boot & Spring AI compatibility matrix on Maven Central:
+    - Candidate (a) Spring Boot 3.5.16 + Spring AI 1.1.8: `spring-ai-starter-mcp-server-webmvc` was introduced in Spring AI 2.0.x and does not exist in 1.x.
+    - Candidate (b) Spring Boot 4.1.1 + Spring AI 2.0.1: Native Java 25 LTS baseline on Spring Framework 7.x with official MCP server webmvc starter.
+  - Executed compatibility spike in `scratch/spike-boot4` with Java 25.0.4.1: compiled cleanly and booted in 2.04 seconds.
+  - Diagnosed transitive dependency collision: `jfalkordb:0.13.0` requires `jedis:8.0.1` (`autoNegotiateProtocol` method), whereas Spring Boot 4.1.1 managed `jedis.version` to `7.4.1`. Overrode `<jedis.version>8.0.1</jedis.version>` in `pom.xml` to eliminate `NoSuchMethodError`.
+  - Implemented `EnvLoader` to load local `.env` values into System properties without overriding OS environment variables.
+  - Configured `application.properties` with fallback defaults, setting `server.port=${SERVER_PORT:8085}` to avoid conflict with existing host service on 8080.
+  - Created singleton `Driver` bean in `FalkorDbConfig` managing connection pooling over Redis RESP protocol.
+  - Implemented `GET /api/health` in `HealthController` executing `RETURN 1 AS ping`, returning HTTP 200 when active and controlled HTTP 503 with sanitized error messages (no credentials or stack traces) when down.
+  - Created `DevTraceApplicationTests` and `HealthControllerTest`, executed `mvn test` -> `BUILD SUCCESS` (2 tests run, 0 failures).
+  - Executed live verification: `curl` returned 200 OK -> `docker compose stop` -> `curl` returned 503 DOWN -> `docker compose start` -> `curl` recovered to 200 OK.
+- **Key Design Decisions**:
+  - Align `jedis.version` to 8.0.1 via Maven property override to satisfy `jfalkordb` binary requirements without breaking Spring Boot BOM management.
+  - Sanitize all error responses in `HealthController` to prevent credential or internal socket leakage when the database is unavailable.
+
+
 
