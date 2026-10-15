@@ -62,8 +62,8 @@
 - **What Was Done**:
   - Performed volume persistence verification across container recreation: executed `docker compose down` (no `-v`) followed by `docker compose up -d`, and proved data survived via `FalkorConnectionTest`.
   - Researched official Spring Boot & Spring AI compatibility matrix on Maven Central:
-    - Candidate (a) Spring Boot 3.5.16 + Spring AI 1.1.8: `spring-ai-starter-mcp-server-webmvc` was introduced in Spring AI 2.0.x and does not exist in 1.x.
-    - Candidate (b) Spring Boot 4.1.1 + Spring AI 2.0.1: Native Java 25 LTS baseline on Spring Framework 7.x with official MCP server webmvc starter.
+    - *Correction*: `spring-ai-starter-mcp-server-webmvc` is published on Maven Central across both 1.x (`1.0.0-M7` to `1.1.8`) and 2.x (`2.0.0-M1` to `2.0.1`).
+    - Candidate (b) Spring Boot 4.1.1 + Spring AI 2.0.1 was confirmed by spike as the optimal choice to provide native Java 25 LTS baseline support with Spring Framework 7.x.
   - Executed compatibility spike in `scratch/spike-boot4` with Java 25.0.4.1: compiled cleanly and booted in 2.04 seconds.
   - Diagnosed transitive dependency collision: `jfalkordb:0.13.0` requires `jedis:8.0.1` (`autoNegotiateProtocol` method), whereas Spring Boot 4.1.1 managed `jedis.version` to `7.4.1`. Overrode `<jedis.version>8.0.1</jedis.version>` in `pom.xml` to eliminate `NoSuchMethodError`.
   - Implemented `EnvLoader` to load local `.env` values into System properties without overriding OS environment variables.
@@ -75,6 +75,30 @@
 - **Key Design Decisions**:
   - Align `jedis.version` to 8.0.1 via Maven property override to satisfy `jfalkordb` binary requirements without breaking Spring Boot BOM management.
   - Sanitize all error responses in `HealthController` to prevent credential or internal socket leakage when the database is unavailable.
+
+## Checkpoint 4 — Graph Model, Golden Scenario & FalkorDB Capability Probe
+- **Date / Time**: 2026-10-15
+- **Verified Status**: Capability probe executed on `devtrace_test`, graph schema and golden scenario documented in `docs/`.
+- **What Was Done**:
+  - Executed runtime capability probe on isolated test graph `devtrace_test` (and cleaned up with `GRAPH.DELETE devtrace_test`):
+    - `CALL dbms.procedures()` revealed native graph algorithm procedures: `algo.pageRank`, `algo.betweenness`, `algo.HarmonicCentrality`, `algo.BFS`, `algo.WCC`, `algo.MSF`, `algo.maxFlow`.
+    - `shortestPath()` was verified: FalkorDB supports it in `WITH` and `RETURN` clauses (`WITH shortestPath((a)-[:DEPENDS_ON*]->(c)) AS p RETURN [n in nodes(p) | n.id] AS path, length(p) AS len`).
+    - Centrality algorithms verified on live graph: `CALL algo.pageRank('Service', 'DEPENDS_ON')` and `CALL algo.betweenness()`.
+    - Index & Constraint syntax: `CREATE INDEX FOR (s:Service) ON (s.id)` creates the supporting index; `GRAPH.CONSTRAINT CREATE <graph> UNIQUE NODE <label> PROPERTIES 1 id` establishes uniqueness. Attempted duplicate insertion verified that FalkorDB rejects duplicate keys with `unique constraint violation on node of type <Label>`.
+    - Bounded traversals (`[:DEPENDS_ON*1..4]`) and idempotent updates (`MERGE ... ON CREATE SET ... ON MATCH SET ...`) were verified.
+  - Authored `docs/GRAPH_MODEL.md`:
+    - Designed schema backwards from 7 operational investigation questions.
+    - Defined 5 node labels (`Service`, `Deployment`, `ErrorSignature`, `Incident`, `Resolution`) with required typed properties.
+    - Explicitly defined `(A)-[:DEPENDS_ON]->(B)` as caller -> callee, and blast radius traversal via incoming edges (`<-[:DEPENDS_ON]-`).
+    - Documented deterministic keyword/alias parsing with honest limitations.
+  - Authored `docs/GOLDEN_SCENARIO.md`:
+    - Established 5-act demonstration script with 9 synthetic services and a 4-hop chain (`api-gateway` to `postgres-payments`).
+    - Defined distractor deployments and past incidents demonstrating structured matching superiority.
+    - Specified expected ranked candidate causes, blast radius boundaries, insufficient evidence handling, resolution write-back evolution, and the graph-removal benchmark.
+- **Key Design Decisions**:
+  - Keep team ownership as a property on `Service` rather than a separate node, keeping query execution fast without multi-hop overhead.
+  - Rely on FalkorDB's native `algo.pageRank` and `algo.betweenness` procedures for explainable graph topology analysis.
+
 
 
 
