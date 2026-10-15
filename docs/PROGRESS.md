@@ -37,3 +37,23 @@
   - Pin the exact container digest (`falkordb/falkordb@sha256:107455...`) rather than floating `:latest` tag to guarantee reproducible evaluation across reviewers.
   - Never store or hardcode secrets in compose files, source code, or version control.
 
+## Checkpoint 2b — Multi-Arch Digest Verification, Compose Hardening & Controlled Database Swap
+- **Date / Time**: 2026-10-15
+- **Verified Status**: Multi-arch image verified, compose hardened, controlled swap executed, persistence validated across restart, secrets isolation confirmed.
+- **What Was Done**:
+  - Inspected image digest `falkordb/falkordb@sha256:107455e862a824e45e8e9f5a7fbfdf5e00a08b14e13eae2577c72fd9e3f59ba6` via `docker buildx imagetools inspect`. Confirmed it is an OCI multi-arch image index containing both `linux/arm64` (Apple Silicon / ARM) and `linux/amd64` (x86_64).
+  - Enforced required password evaluation in `docker-compose.yml`: `${FALKORDB_PASSWORD:?set FALKORDB_PASSWORD in .env}`.
+  - Parametrized host ports with defaults `${FALKORDB_PORT:-6379}` and `${FALKORDB_BROWSER_PORT:-3000}`, documenting them in `.env.example`.
+  - Confirmed `/var/lib/falkordb/data` persistence directory from `/var/lib/falkordb/bin/run.sh` and container environment.
+  - Verified `.env` is ignored by git (`git check-ignore -v .env`).
+  - Renamed active git branch to `main` (`git branch -M main`).
+  - Queried existing `devtrace-falkordb` container; verified graph held strictly the 2-node connectivity test (`OrderService -[DEPENDS_ON]-> PaymentService`).
+  - Performed controlled swap: stopped `devtrace-falkordb` and renamed to `devtrace-falkordb-old` as safety rollback.
+  - Started new instance via `docker compose up -d`, recreated 2-node test graph, and ran `FalkorConnectionTest` with Java 25 -> `BUILD SUCCESS`.
+  - Tested volume persistence: executed `docker compose restart`, re-ran Java connectivity test -> `BUILD SUCCESS`, confirming data survived restart.
+  - Executed secret scan using `findstr /s /m /l` across all workspace files; verified only untracked `.env` matched.
+- **Key Design Decisions**:
+  - Controlled swap over ephemeral ports: using compose for active local development tests reproducibility immediately while keeping the previous container as a non-destructive rollback.
+  - Required password expansion (`${VAR:?error}`) prevents Docker Compose from silently starting an unauthenticated or partially configured container.
+
+
