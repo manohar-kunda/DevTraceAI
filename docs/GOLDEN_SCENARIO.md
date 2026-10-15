@@ -40,15 +40,15 @@ flowchart TD
 
 ## 2. Deployments & Timeline (Fixed Epoch Milliseconds)
 
-Assume current incident occurs at $T_0 =$ `1760522400000` (2026-10-15 10:00:00 UTC).
+Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 UTC).
 
 | Deployment ID | Service | Version | Timestamp | Relative to $T_0$ | Role in Scenario |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `dep-checkout-v3.0.0` | `service-checkout` | `v3.0.0` | `1759917600000` | $T - 7\text{ days}$ | **Distractor**: Relevant service, but stale. |
-| `dep-order-v2.1.0` | `service-order` | `v2.1.0` | `1760349600000` | $T - 2\text{ days}$ | **Baseline**: Stable previous release. |
-| `dep-payment-v2.4.1` | `service-payment` | `v2.4.1` | `1760520600000` | $T - 30\text{ min}$ | **Candidate Cause**: Recent release on downstream dependency, exhibits timeout signature. |
-| `dep-notification-v1.8.0` | `service-notification` | `v1.8.0` | `1760521500000` | $T - 15\text{ min}$ | **Distractor**: Recent deployment, but topologically disconnected. |
-| `dep-inventory-v1.5.0` | `service-inventory` | `v1.5.0` | `1760521800000` | $T - 10\text{ min}$ | **Hard Connected Distractor**: More recent ($T-10m$) and closer (1 hop), but zero error signature match. |
+| `dep-checkout-v3.0.0` | `service-checkout` | `v3.0.0` | `1791453600000` | $T - 7\text{ days}$ | **Distractor**: Relevant service, but stale. |
+| `dep-order-v2.1.0` | `service-order` | `v2.1.0` | `1791885600000` | $T - 2\text{ days}$ | **Baseline**: Stable previous release. |
+| `dep-payment-v2.4.1` | `service-payment` | `v2.4.1` | `1792056600000` | $T - 30\text{ min}$ | **Primary Candidate**: Recent release on downstream dependency, exhibits pool timeout signature. |
+| `dep-notification-v1.8.0` | `service-notification` | `v1.8.0` | `1792057500000` | $T - 15\text{ min}$ | **Disconnected Change**: Outside candidate neighborhood; excluded from candidate ranking. |
+| `dep-inventory-v1.5.0` | `service-inventory` | `v1.5.0` | `1792057800000` | $T - 10\text{ min}$ | **Connected Distractor**: More recent ($T-10m$) and closer (1 hop), but zero error signature match. |
 
 ---
 
@@ -56,33 +56,33 @@ Assume current incident occurs at $T_0 =$ `1760522400000` (2026-10-15 10:00:00 U
 
 ### Incident A — Matching Historical Anchor (`inc-2026-08-12-pay`)
 - **Service Affected**: `service-payment` (`payment-service`)
-- **Reported At**: `1754985600000`
-- **Error Signature**: `err-sig-gateway-timeout` (`HTTP 504 / GatewayTimeoutException`)
+- **Reported At**: `1786521600000` (2026-08-12 08:00:00 UTC)
+- **Error Signature**: `err-sig-payment-pool-timeout` (`JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool`)
 - **Status**: `RESOLVED`
 - **Linked Resolution**: `res-pay-timeout-fix`
   - *Title*: "Increase Jedis pool timeout and rollback connection limit"
-  - *Confirmed At*: `1754989200000` (sane: $+1\text{ hour}$ after reported)
+  - *Confirmed At**: `1786525200000` (2026-08-12 09:00:00 UTC; $+1\text{ hour}$ after reported)
   - *Action Taken*: "Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap."
   - *Remediation Type*: `CONFIG_CHANGE`
 
 ### Incident B — Semantic Distractor (`inc-2026-09-01-auth`)
 - **Service Affected**: `service-auth` (`auth-service`)
-- **Reported At**: `1756717200000`
+- **Reported At**: `1788253200000` (2026-09-01 09:00:00 UTC)
 - **Report Description**: "Timeouts observed during checkout token verification" (contains keywords 'timeout' and 'checkout').
 - **Error Signature**: `err-sig-jwt-expired` (`SignatureVerificationException / ClockSkew`)
 - **Status**: `RESOLVED`
 - **Linked Resolution**: `res-auth-ntp-sync`
   - *Title*: "Resynchronize NTP clock daemon on auth hosts"
-  - *Confirmed At*: `1756720800000` (sane: $+1\text{ hour}$ after reported)
+  - *Confirmed At**: `1788256800000` (2026-09-01 10:00:00 UTC; $+1\text{ hour}$ after reported)
 - **Purpose**: Proves that structured graph matching on `(:Incident)-[:EXHIBITS]->(:ErrorSignature)` correctly rejects auth fixes, despite overlapping free-text keywords.
 
 ### Incident C — Unrelated Historical Baseline (`inc-2026-07-20-notif`)
 - **Service Affected**: `service-notification` (`notification-service`)
-- **Reported At**: `1753005600000`
+- **Reported At**: `1784541600000` (2026-07-20 10:00:00 UTC)
 - **Error Signature**: `err-sig-smtp-disconnect`
 - **Status**: `RESOLVED`
 - **Linked Resolution**: `res-notif-smtp-failover`
-  - *Confirmed At*: `1753009200000`
+  - *Confirmed At**: `1784545200000` (2026-07-20 11:00:00 UTC; $+1\text{ hour}$ after reported)
 
 ---
 
@@ -94,18 +94,19 @@ Assume current incident occurs at $T_0 =$ `1760522400000` (2026-10-15 10:00:00 U
   {
     "description": "Checkout requests are failing after the latest deployment and payment timeouts have increased.",
     "serviceHint": "service-checkout",
-    "errorHint": "err-sig-gateway-timeout"
+    "errorHint": "err-sig-payment-pool-timeout"
   }
   ```
 - **Graph Retrieval Operations**:
   1. Entry node resolved: `(:Service {id: 'service-checkout'})`.
-  2. Error signature matched: `(:ErrorSignature {id: 'err-sig-gateway-timeout'})`.
+  2. Error signature matched: `(:ErrorSignature {id: 'err-sig-payment-pool-timeout'})`.
   3. Downstream dependency traversal: `(checkout-service)-[:DEPENDS_ON*1..3]->(downstream:Service)`.
      - Direct downstream (1 hop): `service-inventory`, `service-order`.
      - Indirect downstream (2+ hops): `service-payment`, `service-postgres-orders`, `service-postgres-payments`, `service-redis-cache`.
   4. Change correlation: Queries deployments on traversed services within 24 hours of $T_0$.
      - Discovers `dep-inventory-v1.5.0` on `service-inventory` ($T - 10\text{ min}$).
      - Discovers `dep-payment-v2.4.1` on `service-payment` ($T - 30\text{ min}$).
+     - Rejects `dep-notification-v1.8.0` on `service-notification`: Outside candidate dependency neighborhood; listed as *"recent changes outside the dependency neighborhood, not considered"*.
   5. Shortest path computation:
      ```cypher
      MATCH (src:Service {id: 'service-checkout'}), (tgt:Service {id: 'service-payment'})
@@ -113,31 +114,13 @@ Assume current incident occurs at $T_0 =$ `1760522400000` (2026-10-15 10:00:00 U
      RETURN [n in nodes(p) | n.name] AS path
      ```
      - Returns: `["checkout-service", "order-service", "payment-service"]`.
-  6. Historical resolution lookup: Finds `inc-2026-08-12-pay` exhibiting `err-sig-gateway-timeout` on `service-payment`.
+  6. Historical resolution lookup: Finds `inc-2026-08-12-pay` exhibiting `err-sig-payment-pool-timeout` on `service-payment`.
 
-- **Deterministic Candidate Ranking Formula**:
-  $$\text{Score}(d) = \text{TopologyScore}(d) + \text{RecencyScore}(d) + \text{SignatureScore}(d)$$
-  Where:
-  - $\text{TopologyScore}$: 40 for 1-hop callee, 30 for 2-hop callee, 20 for 3-hop callee, 0 if disconnected.
-  - $\text{RecencyScore}$: $\max(0, 20 \times (1 - \frac{\text{TimeDelta}}{2\text{ hours}}))$ within 2 hours.
-  - $\text{SignatureScore}$: $+50$ if service has historical incidents matching the symptom error signature or domain keywords in report; 0 otherwise.
-
-- **Verified Candidate Cause Rank Order**:
-  1. **Rank 1 (Score 95.0)**: `dep-payment-v2.4.1` on `service-payment`
-     - $\text{Topology} = 30$ (2 hops via `order-service`)
-     - $\text{Recency} = 15.0$ (30 min ago)
-     - $\text{SignatureScore} = 50$ (Matches historical `inc-2026-08-12-pay` on `err-sig-gateway-timeout`)
-     - **Key Architectural Defense**: Even though `inventory-service` was deployed more recently (10m ago vs 30m ago) and is closer (1 hop vs 2 hops), it is ranked below `payment-service` because it lacks error signature affinity. Ranking cannot be solved by topology or recency alone!
-  2. **Rank 2 (Score 58.3)**: `dep-inventory-v1.5.0` on `service-inventory`
-     - $\text{Topology} = 40$ (1 hop direct dependency)
-     - $\text{Recency} = 18.3$ (10 min ago)
-     - $\text{SignatureScore} = 0$ (Zero error signature or timeout correlation)
-  3. **Rank 3 (Score 17.5)**: `dep-notification-v1.8.0` on `service-notification`
-     - $\text{Topology} = 0$ (Disconnected branch)
-     - $\text{Recency} = 17.5$ (15 min ago)
-     - $\text{SignatureScore} = 0$
-  4. **Rank 4 (Score 0)**: `dep-order-v2.1.0` on `service-order` (2 days old, outside 24h incident window)
-  5. **Rank 5 (Score 0)**: `dep-checkout-v3.0.0` on `service-checkout` (7 days old, stale)
+- **Qualitative Candidate Scoping & Hypotheses**:
+  - **Candidate Cause Scope**: Candidate root causes are strictly bounded to services within the downstream dependency neighborhood reachable from the symptom service.
+  - **Excluded Changes**: Deployments on disconnected services (`dep-notification-v1.8.0`) are NOT candidates and are not ranked; the investigation report explicitly records them under *"recent changes outside the dependency neighborhood, not considered"*.
+  - **Primary Suspect**: `dep-payment-v2.4.1` on `service-payment`. Reason: Although `inventory-service` has a more recent deployment (10m ago vs 30m ago) and is topologically closer (1 hop vs 2 hops), it exhibits zero error signature affinity. `payment-service` directly matches the technical error pattern (`err-sig-payment-pool-timeout`) and historical resolution `res-pay-timeout-fix`.
+  - *(Note: Detailed candidate cause ranking heuristic, component breakdown, and robustness tests will be formally implemented in Checkpoint 7).*
 
 ---
 

@@ -128,7 +128,41 @@
   - Whitelist-guarded reset: `ALLOWED_RESET_GRAPHS = {"devtrace", "devtrace_test"}` ensures production graphs can never be accidentally dropped.
   - Strict separation of test lifecycles (`mvn test` vs `mvn verify` via Failsafe) keeps standard build pipelines reliable even when database containers are not running.
 
-
-
-
-
+## Checkpoint 6 — Graph Repository Layer, Entry-Point Resolution & Dependency Traversal
+- **Date / Time**: 2026-10-15
+- **Verified Status**: All tests passing (`mvn test` 9/9 unit tests; `mvn verify` 15/15 integration tests; total 24 tests passed). Live graph probe on `devtrace` verified.
+- **What Was Done**:
+  - **Part 0 (Audit Fixes & Ground Truth Calibration)**:
+    - Audited Unix epoch timestamps with PowerShell `[DateTimeOffset]::FromUnixTimeMilliseconds(<val>).UtcDateTime`. Corrected seed data and scenario docs from 2025 to October 2026 (incident $T_0 = 1792058400000$ = 2026-10-15 10:00:00 UTC). Added date integrity assertions to `FalkorSeedIntegrationIT`.
+    - Verified untruncated ID `service-postgres-payments` across seed Cypher, scenario documentation, and graph assertions.
+    - Renamed ambiguous `err-sig-gateway-timeout` to `err-sig-payment-pool-timeout` (`JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool`) to represent the exact technical failure mode.
+    - Updated candidate cause scoping in `docs/GOLDEN_SCENARIO.md`: disconnected services (`notification-service`) are explicitly excluded from candidate evaluation.
+    - Re-seeded live development graph `devtrace` with calibrated timestamps and signature names.
+  - **Part A (Data Models & Graph Repository)**:
+    - Created domain records in `com.devtrace.model`: `ServiceNode`, `ErrorSignatureNode`, `ServiceHop`, `DependentsResult`, `DependenciesResult`, `DependencyPath`, `MatchedEvidence`, `ResolvedService`, `ResolvedErrorSignature`, `EntryPointsResult`, `InvestigationRequest`.
+    - Documented reverse failure-propagation semantics in `DependencyPath`: caller -> callee defines invocation; callee -> caller defines cascading failure propagation.
+    - Implemented `GraphRepository` interface and `FalkorGraphRepository`:
+      - Parameterized Cypher queries (`Map<String, Object>`) preventing injection.
+      - Bounded traversal depths (1..10) and result limits (1..100).
+      - Utilized `min(length(path)) AS minHops` to deduplicate services and return exact shortest hop distance in cyclic/multi-path topologies.
+      - Utilized FalkorDB `shortestPath((src)-[:DEPENDS_ON*1..%d]->(tgt))` inside `WITH`/`RETURN` to find directed paths.
+  - **Part B (Entry-Point Resolver)**:
+    - Implemented `EntryPointResolver` and `DefaultEntryPointResolver`:
+      - Case, punctuation, and plural normalization with unstemmed technical exceptions (`redis`, `postgres`, `gateway`, `ingress`, `access`).
+      - Longest-phrase matching precedence (e.g. `"payment timeout"` matched before `"timeout"`).
+      - Structured hint override support (`symptomServiceHint`, `errorSignatureHint`).
+      - Candidate neighborhood tie-breaking for ambiguous error signatures.
+      - Zero-guess contract (`hasConfidentMatches()`) ensuring unresolvable queries do not produce hallucinations.
+    - Implemented `DefaultEntryPointResolverTest` (7 unit tests, 100% passed offline in `mvn test`).
+  - **Part C (Integration Tests & Live Graph Verification)**:
+    - Implemented `FalkorGraphRepositoryIT` (8 integration tests, 100% passed in `mvn verify` against `devtrace_test`).
+    - Verified complete offline safety: `mvn test` runs pure unit tests without requiring Docker or network access; `mvn verify` runs integration tests against isolated test graph `devtrace_test`.
+    - Executed live repository probe against `devtrace` graph:
+      - `findDependents("service-payment", 4, 10)` returned callers `service-order` (1 hop), `service-checkout` (2 hops), `service-gateway` (3 hops), and excluded non-callers.
+      - `findDependencies("service-checkout", 4, 10)` returned all 6 downstream dependencies.
+      - `findDependencyPath("service-checkout", "service-payment", 4)` returned `service-checkout -> service-order -> service-payment` (2 hops).
+      - `findDependencyPath("service-payment", "service-checkout", 4)` returned empty, confirming caller-to-callee directionality.
+- **Key Design Decisions**:
+  - *Reverse Failure-Propagation Principle*: Graph edges follow operational call chains `(caller)-[:DEPENDS_ON]->(callee)`, while blast radius and incident impact propagate backward `(callee)<-[:DEPENDS_ON]-(caller)`. Modeling callers as dependents correctly computes impact without mutating graph edge semantics.
+  - *Single-Node Minimal Hop Deduplication*: In interconnected microservices, multiple paths of varying lengths can reach the same dependent. Grouping by node and aggregating `min(length(path))` ensures every affected service appears exactly once at its closest topological distance.
+  - *Zero-Guess Entry Resolution*: Entry-point resolution never guesses. When text is ambiguous or lacks matches, DevTrace AI explicitly signals missing evidence rather than traversing random graph subtrees.

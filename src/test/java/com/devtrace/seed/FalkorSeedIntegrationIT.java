@@ -123,38 +123,75 @@ class FalkorSeedIntegrationIT {
 
     @Test
     @Order(5)
-    @DisplayName("Act 2 Blast Radius: Verified upstream callers of payment-service")
+    @DisplayName("Act 2 Blast Radius: Verified upstream callers of payment-service with exact set equality & serviceType absence")
     void testAct2BlastRadius() {
         Graph graph = driver.graph(TEST_GRAPH);
 
         ResultSet rs = graph.query("""
             MATCH path = (d:Service)-[:DEPENDS_ON*1..4]->(t:Service {id: 'service-payment'})
-            RETURN d.id AS id, length(path) AS hops
+            RETURN d.id AS id, d.serviceType AS serviceType, length(path) AS hops
             ORDER BY hops ASC, d.id ASC
         """);
 
         List<String> callerIds = new ArrayList<>();
         List<Long> hopCounts = new ArrayList<>();
+        java.util.Set<String> returnedServiceTypes = new java.util.HashSet<>();
 
         for (Record rec : rs) {
             callerIds.add(rec.getString("id"));
+            returnedServiceTypes.add(rec.getString("serviceType"));
             hopCounts.add(((Number) rec.getValue("hops")).longValue());
         }
 
-        // Expected callers in blast radius
-        assertEquals(List.of("service-order", "service-checkout", "service-gateway"), callerIds);
-        assertEquals(List.of(1L, 2L, 3L), hopCounts);
+        // 1. EXACT set equality for returned caller IDs
+        java.util.Set<String> expectedCallers = java.util.Set.of("service-order", "service-checkout", "service-gateway");
+        assertEquals(expectedCallers, new java.util.HashSet<>(callerIds), "Returned callers must exactly match the documented set");
+        assertEquals(List.of(1L, 2L, 3L), hopCounts, "Hops must correspond to direct (1), 2-hop, and 3-hop dependents");
 
-        // Verify excluded nodes
-        assertFalse(callerIds.contains("service-postgres-payments"), "postgres-payments is a callee, not an upstream caller");
-        assertFalse(callerIds.contains("service-redis-cache"), "redis-cache is a callee, not an upstream caller");
-        assertFalse(callerIds.contains("service-auth"), "auth-service is an independent branch");
-        assertFalse(callerIds.contains("service-inventory"), "inventory-service is a sibling branch");
-        assertFalse(callerIds.contains("service-notification"), "notification-service is an independent branch");
+        // 2. Explicit absence check by serviceType (DATABASE, CACHE)
+        assertFalse(returnedServiceTypes.contains("DATABASE"), "DATABASE nodes must never appear in service-level blast radius callers");
+        assertFalse(returnedServiceTypes.contains("CACHE"), "CACHE nodes must never appear in service-level blast radius callers");
+
+        // 3. Independent cypher check confirming zero DATABASE or CACHE nodes depend on payment-service
+        ResultSet nonServiceRs = graph.query("""
+            MATCH (d:Service)-[:DEPENDS_ON*1..4]->(t:Service {id: 'service-payment'})
+            WHERE d.serviceType IN ['DATABASE', 'CACHE']
+            RETURN count(d) AS cnt
+        """);
+        long nonServiceCount = ((Number) nonServiceRs.iterator().next().getValue("cnt")).longValue();
+        assertEquals(0L, nonServiceCount, "Zero DATABASE or CACHE nodes should be upstream callers of payment-service");
     }
 
     @Test
     @Order(6)
+    @DisplayName("Date integrity: Seeded timestamps match the date embedded in their IDs")
+    void testTimestampDateIntegrity() {
+        Graph graph = driver.graph(TEST_GRAPH);
+
+        // Check Incidents
+        ResultSet incRs = graph.query("MATCH (i:Incident) RETURN i.id AS id, i.reportedAt AS ts");
+        for (Record rec : incRs) {
+            String id = rec.getString("id"); // e.g. inc-2026-08-12-pay
+            long ts = ((Number) rec.getValue("ts")).longValue();
+            String dateInId = id.substring(4, 14); // 2026-08-12
+            String actualDate = java.time.Instant.ofEpochMilli(ts)
+                    .atZone(java.time.ZoneOffset.UTC)
+                    .toLocalDate()
+                    .toString();
+            assertEquals(dateInId, actualDate, "Incident timestamp must fall on the exact calendar date embedded in ID: " + id);
+        }
+
+        // Check Resolutions
+        ResultSet resRs = graph.query("MATCH (r:Resolution)-[:RESOLVES]->(i:Incident) RETURN r.id AS resId, r.confirmedAt AS rTs, i.reportedAt AS iTs");
+        for (Record rec : resRs) {
+            long rTs = ((Number) rec.getValue("rTs")).longValue();
+            long iTs = ((Number) rec.getValue("iTs")).longValue();
+            assertTrue(rTs > iTs, "Resolution confirmedAt must be strictly after incident reportedAt");
+        }
+    }
+
+    @Test
+    @Order(7)
     @DisplayName("Safety check: reset is forbidden on non-whitelisted graphs")
     void testResetSafetyRestriction() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> {

@@ -98,7 +98,7 @@ classDiagram
 - **Required Properties**:
   - `id` (`string`, unique): Unique deployment ID (e.g. `"dep-payment-v2.4.1"`).
   - `version` (`string`): Semantic version or commit hash (e.g. `"v2.4.1"`).
-  - `deployedAt` (`int`): Fixed epoch-millisecond timestamp (e.g. `1760520600000`).
+  - `deployedAt` (`int`): Fixed epoch-millisecond timestamp (e.g. `1792056600000` for 2026-10-15 09:30:00 UTC).
   - `environment` (`string`): Environment (e.g. `"production"`).
   - `deployedBy` (`string`): Engineer or CI/CD pipeline name.
 - **Example Record**:
@@ -106,7 +106,7 @@ classDiagram
   (:Deployment {
     id: "dep-payment-v2.4.1",
     version: "v2.4.1",
-    deployedAt: 1760520600000,
+    deployedAt: 1792056600000,
     environment: "production",
     deployedBy: "github-actions"
   })
@@ -116,17 +116,17 @@ classDiagram
 ### C. `ErrorSignature`
 - **Meaning**: A normalized, clustered error fingerprint or classification.
 - **Required Properties**:
-  - `id` (`string`, unique): Unique error signature ID (e.g. `"err-sig-gateway-timeout"`).
-  - `pattern` (`string`): Error message pattern or exception class (e.g. `"HTTP 504 / GatewayTimeoutException"`).
+  - `id` (`string`, unique): Unique error signature ID (e.g. `"err-sig-payment-pool-timeout"`).
+  - `pattern` (`string`): Technical exception or error pattern (e.g. `"JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool"`).
   - `errorType` (`string`): Category (e.g. `"TIMEOUT"`, `"CONNECTION"`, `"AUTHENTICATION"`).
-  - `keywords` (`string`): Comma-separated tokens for deterministic text parsing (e.g. `"504,gateway timeout,payment timeout,upstream timeout,read timeout,http 504"`).
+  - `keywords` (`string`): Comma-separated tokens for deterministic text parsing (e.g. `"payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout"`).
 - **Example Record**:
   ```cypher
   (:ErrorSignature {
-    id: "err-sig-gateway-timeout",
-    pattern: "HTTP 504 Gateway Timeout",
+    id: "err-sig-payment-pool-timeout",
+    pattern: "JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool",
     errorType: "TIMEOUT",
-    keywords: "504,gateway timeout,payment timeout,upstream timeout,read timeout,http 504"
+    keywords: "payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout"
   })
   ```
 - **Investigation Role**: Connects new incidents to historical incidents with identical failure patterns.
@@ -145,7 +145,7 @@ classDiagram
     id: "inc-2026-08-12-pay",
     title: "Payment timeout surge during peak checkout",
     status: "RESOLVED",
-    reportedAt: 1754985600000,
+    reportedAt: 1786521600000,
     severity: "P1"
   })
   ```
@@ -167,7 +167,7 @@ classDiagram
     title: "Increase Jedis pool timeout and rollback connection limit",
     remediationType: "CONFIG_CHANGE",
     actionTaken: "Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap",
-    confirmedAt: 1754989200000,
+    confirmedAt: 1786525200000,
     confirmedBy: "sre-oncall"
   })
   ```
@@ -225,7 +225,7 @@ DevTrace AI parses user descriptions deterministically without requiring an LLM:
 2. **Error Signature Extraction**: Matches text tokens against `ErrorSignature.keywords` (e.g. `"504"`, `"gateway timeout"`, `"payment timeout"`).
 3. **Deterministic Tie-Break Rules**:
    - **Rule 1 (Longest Phrase Match)**: Multi-word phrase matches (e.g. `"payment timeout"` - 2 words) take strict precedence over single-word matches (e.g. `"timeout"` - 1 word).
-   - **Rule 2 (Topological Neighborhood Scoping)**: If keyword ambiguity persists between multiple signatures (e.g. `err-sig-gateway-timeout` vs `err-sig-jwt-expired`), candidate signatures are scored by whether the services historically affected by that signature (`(:Incident)-[:EXHIBITS]->(sig)` with `(:Incident)-[:AFFECTS]->(srv)`) lie within the reachable call chain (`(symptom)-[:DEPENDS_ON*0..3]->(srv)`). Services outside the reachability neighborhood are rejected.
+   - **Rule 2 (Topological Neighborhood Scoping)**: If keyword ambiguity persists between multiple signatures (e.g. `err-sig-payment-pool-timeout` vs `err-sig-jwt-expired`), candidate signatures are scored by whether the services historically affected by that signature (`(:Incident)-[:EXHIBITS]->(sig)` with `(:Incident)-[:AFFECTS]->(srv)`) lie within the reachable call chain (`(symptom)-[:DEPENDS_ON*0..3]->(srv)`). Services outside the reachability neighborhood are rejected.
    - **Rule 3 (Structured Alert Override)**: Optional structured fields (`serviceHint`, `errorHint`, `incidentTimestamp`) bypass text extraction entirely when automated alerts trigger the investigation.
 4. **Honest Limitations & Refusal Criteria**:
    - If no service or error signature can be resolved with high confidence, the system returns `"INSUFFICIENT_EVIDENCE"` rather than guessing.

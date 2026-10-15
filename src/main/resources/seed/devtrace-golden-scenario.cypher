@@ -47,29 +47,29 @@ ON MATCH SET s.name = 'redis-cache', s.team = 'Database Infrastructure', s.alias
 
 // --- 2. Deployments ---
 MERGE (d:Deployment {id: 'dep-checkout-v3.0.0'})
-ON CREATE SET d.version = 'v3.0.0', d.deployedAt = 1759917600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v3.0.0', d.deployedAt = 1759917600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v3.0.0', d.deployedAt = 1791453600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
+ON MATCH SET d.version = 'v3.0.0', d.deployedAt = 1791453600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-order-v2.1.0'})
-ON CREATE SET d.version = 'v2.1.0', d.deployedAt = 1760349600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v2.1.0', d.deployedAt = 1760349600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v2.1.0', d.deployedAt = 1791885600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
+ON MATCH SET d.version = 'v2.1.0', d.deployedAt = 1791885600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-payment-v2.4.1'})
-ON CREATE SET d.version = 'v2.4.1', d.deployedAt = 1760520600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v2.4.1', d.deployedAt = 1760520600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v2.4.1', d.deployedAt = 1792056600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
+ON MATCH SET d.version = 'v2.4.1', d.deployedAt = 1792056600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-notification-v1.8.0'})
-ON CREATE SET d.version = 'v1.8.0', d.deployedAt = 1760521500000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v1.8.0', d.deployedAt = 1760521500000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v1.8.0', d.deployedAt = 1792057500000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
+ON MATCH SET d.version = 'v1.8.0', d.deployedAt = 1792057500000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-inventory-v1.5.0'})
-ON CREATE SET d.version = 'v1.5.0', d.deployedAt = 1760521800000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v1.5.0', d.deployedAt = 1760521800000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
+ON MATCH SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
 
 // --- 3. Error Signatures ---
-MERGE (e:ErrorSignature {id: 'err-sig-gateway-timeout'})
-ON CREATE SET e.pattern = 'HTTP 504 Gateway Timeout', e.errorType = 'TIMEOUT', e.keywords = '504,gateway timeout,payment timeout,upstream timeout,read timeout,http 504', e.source = 'synthetic'
-ON MATCH SET e.pattern = 'HTTP 504 Gateway Timeout', e.errorType = 'TIMEOUT', e.keywords = '504,gateway timeout,payment timeout,upstream timeout,read timeout,http 504', e.source = 'synthetic';
+MERGE (e:ErrorSignature {id: 'err-sig-payment-pool-timeout'})
+ON CREATE SET e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic'
+ON MATCH SET e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic';
 
 MERGE (e:ErrorSignature {id: 'err-sig-jwt-expired'})
 ON CREATE SET e.pattern = 'SignatureVerificationException / ClockSkew', e.errorType = 'AUTHENTICATION', e.keywords = 'jwt,expired token,token verification,clock skew,signature verification,auth timeout', e.source = 'synthetic'
@@ -81,29 +81,29 @@ ON MATCH SET e.pattern = 'SMTPConnectionClosedException', e.errorType = 'NETWORK
 
 // --- 4. Historical Incidents ---
 MERGE (i:Incident {id: 'inc-2026-07-20-notif'})
-ON CREATE SET i.title = 'Notification worker mail server disconnection', i.status = 'RESOLVED', i.reportedAt = 1753005600000, i.severity = 'P3', i.source = 'synthetic'
-ON MATCH SET i.title = 'Notification worker mail server disconnection', i.status = 'RESOLVED', i.reportedAt = 1753005600000, i.severity = 'P3', i.source = 'synthetic';
+ON CREATE SET i.title = 'Notification worker mail server disconnection', i.status = 'RESOLVED', i.reportedAt = 1784541600000, i.severity = 'P3', i.source = 'synthetic'
+ON MATCH SET i.title = 'Notification worker mail server disconnection', i.status = 'RESOLVED', i.reportedAt = 1784541600000, i.severity = 'P3', i.source = 'synthetic';
 
 MERGE (i:Incident {id: 'inc-2026-08-12-pay'})
-ON CREATE SET i.title = 'Payment timeout surge during peak checkout', i.status = 'RESOLVED', i.reportedAt = 1754985600000, i.severity = 'P1', i.source = 'synthetic'
-ON MATCH SET i.title = 'Payment timeout surge during peak checkout', i.status = 'RESOLVED', i.reportedAt = 1754985600000, i.severity = 'P1', i.source = 'synthetic';
+ON CREATE SET i.title = 'Payment timeout surge during peak checkout', i.status = 'RESOLVED', i.reportedAt = 1786521600000, i.severity = 'P1', i.source = 'synthetic'
+ON MATCH SET i.title = 'Payment timeout surge during peak checkout', i.status = 'RESOLVED', i.reportedAt = 1786521600000, i.severity = 'P1', i.source = 'synthetic';
 
 MERGE (i:Incident {id: 'inc-2026-09-01-auth'})
-ON CREATE SET i.title = 'Timeouts observed during checkout token verification', i.status = 'RESOLVED', i.reportedAt = 1756717200000, i.severity = 'P2', i.source = 'synthetic'
-ON MATCH SET i.title = 'Timeouts observed during checkout token verification', i.status = 'RESOLVED', i.reportedAt = 1756717200000, i.severity = 'P2', i.source = 'synthetic';
+ON CREATE SET i.title = 'Timeouts observed during checkout token verification', i.status = 'RESOLVED', i.reportedAt = 1788253200000, i.severity = 'P2', i.source = 'synthetic'
+ON MATCH SET i.title = 'Timeouts observed during checkout token verification', i.status = 'RESOLVED', i.reportedAt = 1788253200000, i.severity = 'P2', i.source = 'synthetic';
 
 // --- 5. Historical Resolutions ---
 MERGE (r:Resolution {id: 'res-notif-smtp-failover'})
-ON CREATE SET r.title = 'Failover to secondary SMTP relay cluster', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Switched outbound notification host config to standby relay pool.', r.confirmedAt = 1753009200000, r.confirmedBy = 'sre-messaging', r.source = 'synthetic'
-ON MATCH SET r.title = 'Failover to secondary SMTP relay cluster', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Switched outbound notification host config to standby relay pool.', r.confirmedAt = 1753009200000, r.confirmedBy = 'sre-messaging', r.source = 'synthetic';
+ON CREATE SET r.title = 'Failover to secondary SMTP relay cluster', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Switched outbound notification host config to standby relay pool.', r.confirmedAt = 1784545200000, r.confirmedBy = 'sre-messaging', r.source = 'synthetic'
+ON MATCH SET r.title = 'Failover to secondary SMTP relay cluster', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Switched outbound notification host config to standby relay pool.', r.confirmedAt = 1784545200000, r.confirmedBy = 'sre-messaging', r.source = 'synthetic';
 
 MERGE (r:Resolution {id: 'res-pay-timeout-fix'})
-ON CREATE SET r.title = 'Increase Jedis pool timeout and rollback connection limit', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.', r.confirmedAt = 1754989200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic'
-ON MATCH SET r.title = 'Increase Jedis pool timeout and rollback connection limit', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.', r.confirmedAt = 1754989200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic';
+ON CREATE SET r.title = 'Increase Jedis pool timeout and rollback connection limit', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.', r.confirmedAt = 1786525200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic'
+ON MATCH SET r.title = 'Increase Jedis pool timeout and rollback connection limit', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.', r.confirmedAt = 1786525200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic';
 
 MERGE (r:Resolution {id: 'res-auth-ntp-sync'})
-ON CREATE SET r.title = 'Resynchronize NTP clock daemon on auth hosts', r.remediationType = 'RESTART', r.actionTaken = 'Restarted chronyd service and forced immediate NTP time sync across auth host pool.', r.confirmedAt = 1756720800000, r.confirmedBy = 'sec-ops', r.source = 'synthetic'
-ON MATCH SET r.title = 'Resynchronize NTP clock daemon on auth hosts', r.remediationType = 'RESTART', r.actionTaken = 'Restarted chronyd service and forced immediate NTP time sync across auth host pool.', r.confirmedAt = 1756720800000, r.confirmedBy = 'sec-ops', r.source = 'synthetic';
+ON CREATE SET r.title = 'Resynchronize NTP clock daemon on auth hosts', r.remediationType = 'RESTART', r.actionTaken = 'Restarted chronyd service and forced immediate NTP time sync across auth host pool.', r.confirmedAt = 1788256800000, r.confirmedBy = 'sec-ops', r.source = 'synthetic'
+ON MATCH SET r.title = 'Resynchronize NTP clock daemon on auth hosts', r.remediationType = 'RESTART', r.actionTaken = 'Restarted chronyd service and forced immediate NTP time sync across auth host pool.', r.confirmedAt = 1788256800000, r.confirmedBy = 'sec-ops', r.source = 'synthetic';
 
 // --- 6. Topology Relationships (DEPENDS_ON) ---
 MATCH (gw:Service {id: 'service-gateway'}), (auth:Service {id: 'service-auth'})
@@ -181,7 +181,7 @@ MATCH (i:Incident {id: 'inc-2026-07-20-notif'}), (e:ErrorSignature {id: 'err-sig
 MERGE (i)-[r:EXHIBITS]->(e)
 ON CREATE SET r.source = 'synthetic';
 
-MATCH (i:Incident {id: 'inc-2026-08-12-pay'}), (e:ErrorSignature {id: 'err-sig-gateway-timeout'})
+MATCH (i:Incident {id: 'inc-2026-08-12-pay'}), (e:ErrorSignature {id: 'err-sig-payment-pool-timeout'})
 MERGE (i)-[r:EXHIBITS]->(e)
 ON CREATE SET r.source = 'synthetic';
 
