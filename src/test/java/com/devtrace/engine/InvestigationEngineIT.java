@@ -85,15 +85,15 @@ class InvestigationEngineIT {
         InvestigationReport report = engine.investigate(TEST_GRAPH, request);
 
         // 1. Status and entry points
-        assertEquals("RESOLVED_HYPOTHESIS", report.status(), "Report status must be RESOLVED_HYPOTHESIS");
+        assertEquals("HYPOTHESES_RANKED", report.status(), "Report status must be HYPOTHESES_RANKED");
         assertTrue(report.entryPoints().service().isPresent(), "Symptom service must be resolved");
         assertEquals("service-checkout", report.entryPoints().service().get().serviceId());
         assertTrue(report.entryPoints().errorSignature().isPresent(), "Error signature must be resolved");
         assertEquals("err-sig-payment-pool-timeout", report.entryPoints().errorSignature().get().signatureId());
 
-        // 2. Candidate Hypotheses (dynamically computed, not hard-coded)
+        // 2. Candidate Hypotheses (STRONG and MODERATE only)
         List<CandidateHypothesis> hypotheses = report.hypotheses();
-        assertFalse(hypotheses.isEmpty(), "Hypotheses must not be empty");
+        assertEquals(2, hypotheses.size(), "Hypotheses must contain exactly 2 candidates (payment STRONG, inventory MODERATE)");
 
         // Rank 1: payment-service (STRONG tier)
         CandidateHypothesis rank1 = hypotheses.get(0);
@@ -119,6 +119,15 @@ class InvestigationEngineIT {
 
         // Verify inventory ranks below payment
         assertTrue(rank1.rank() < rank2.rank(), "Payment must outrank inventory despite inventory being topologically closer and more recent");
+
+        // 2b. Other services in neighborhood (WEAK candidates)
+        List<OtherServiceNode> otherServices = report.otherServicesInNeighborhood();
+        assertEquals(5, otherServices.size(), "Must contain 5 WEAK candidates (checkout, order, postgres-orders, postgres-payments, redis-cache)");
+        assertTrue(otherServices.stream().anyMatch(s -> s.id().equals("service-checkout")));
+        assertTrue(otherServices.stream().anyMatch(s -> s.id().equals("service-order")));
+        assertTrue(otherServices.stream().anyMatch(s -> s.id().equals("service-postgres-orders")));
+        assertTrue(otherServices.stream().anyMatch(s -> s.id().equals("service-postgres-payments")));
+        assertTrue(otherServices.stream().anyMatch(s -> s.id().equals("service-redis-cache")));
 
         // 3. Ignored Changes: notification deployment is outside neighborhood
         List<IgnoredChange> ignored = report.ignoredChanges();
@@ -159,14 +168,25 @@ class InvestigationEngineIT {
         assertEquals(Set.of("service-order", "service-checkout", "service-gateway"), blastIds,
                 "Blast radius must exactly match upstream callers");
 
-        // 7. Graph Record Existence: Every evidence recordId must actually exist in the graph
+        // 7. Graph Record Existence (Part 0 Fix 7): Every evidence recordId must actually exist as a node in FalkorDB
+        int evidenceCount = 0;
         for (CandidateHypothesis h : hypotheses) {
             for (EvidenceItem item : h.evidence()) {
-                if (!"findDependencies".equals(item.queryName())) { // recordId is entity ID
-                    assertTrue(repository.recordExists(TEST_GRAPH, item.recordId()),
-                            "Record ID " + item.recordId() + " in evidence must actually exist in the graph");
-                }
+                evidenceCount++;
+                assertTrue(repository.recordExists(TEST_GRAPH, item.recordId()),
+                        "Evidence recordId " + item.recordId() + " (type: " + item.evidenceType() + ") must exist as a node in FalkorDB");
             }
+        }
+        assertTrue(evidenceCount >= 4, "Must have verified multiple evidence items across hypotheses");
+
+        for (IgnoredChange ic : report.ignoredChanges()) {
+            assertTrue(repository.recordExists(TEST_GRAPH, ic.changeId()),
+                    "Ignored change ID " + ic.changeId() + " must exist in FalkorDB");
+        }
+
+        for (OtherServiceNode osn : report.otherServicesInNeighborhood()) {
+            assertTrue(repository.serviceExists(TEST_GRAPH, osn.id()),
+                    "Other service ID " + osn.id() + " must exist in FalkorDB");
         }
 
         // 8. Print full JSON report

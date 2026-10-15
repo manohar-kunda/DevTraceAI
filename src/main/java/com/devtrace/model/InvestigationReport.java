@@ -8,12 +8,13 @@ import java.util.List;
  * No LLM or generative hallucination is used in assembling this report.
  */
 public record InvestigationReport(
-        String status, // "RESOLVED_HYPOTHESIS" or "INSUFFICIENT_EVIDENCE"
+        String status, // "HYPOTHESES_RANKED" or "INSUFFICIENT_EVIDENCE"
         InvestigationRequest requestEcho,
         EntryPointsResult entryPoints,
         ObservedFacts observedFacts,
         GraphRelationships graphRelationships,
         List<CandidateHypothesis> hypotheses,
+        List<OtherServiceNode> otherServicesInNeighborhood,
         List<IgnoredChange> ignoredChanges,
         List<SuggestedNextStep> suggestedNextSteps,
         List<String> limitations,

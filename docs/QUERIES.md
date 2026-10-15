@@ -132,23 +132,27 @@ All queries are executed with bounded traversal depths and strictly parameterize
 ### 3.1 `FIND_SIMILAR_INCIDENTS_STRUCTURED`
 - **Method**: `GraphRepository.findSimilarIncidents(graphName, errorSignatureId, candidateServiceIds)`
 - **Purpose**: Deterministic structured retrieval of historical incidents that:
-  1. Exhibit the exact matching `ErrorSignature`.
-  2. Affect a service within the topological candidate neighborhood.
-  3. Include a confirmed `Resolution` record if one exists.
+  1. Have status `RESOLVED` (active `OPEN` incidents are strictly ignored).
+  2. Exhibit the exact matching `ErrorSignature`.
+  3. Address or affect a service within the topological candidate neighborhood via `(r:Resolution)-[:ADDRESSES]->(s:Service)`.
+  4. Expose full provenance: `source` ('synthetic' vs 'user-confirmed'), `confirmedBy`, `confirmedAt`.
 - **Parameters**:
   - `sigId` (string): Matched error signature ID (e.g. `'err-sig-payment-pool-timeout'`).
   - `serviceIds` (List<String>): Candidate services in neighborhood.
-- **Direction**: `(Incident)-[:EXHIBITS]->(ErrorSignature)`, `(Incident)-[:AFFECTS]->(Service)`, `(Resolution)-[:RESOLVES]->(Incident)`.
+- **Direction**: `(Incident)-[:EXHIBITS]->(ErrorSignature)`, `(Incident)-[:AFFECTS]->(Service)`, `(Resolution)-[:RESOLVES]->(Incident)`, `(Resolution)-[:ADDRESSES]->(Service)`.
 - **Cypher**:
   ```cypher
-  MATCH (i:Incident)-[:EXHIBITS]->(e:ErrorSignature {id: $sigId})
-  MATCH (i)-[:AFFECTS]->(s:Service)
-  WHERE s.id IN $serviceIds
-  OPTIONAL MATCH (r:Resolution)-[:RESOLVES]->(i)
+  MATCH (i:Incident {status: 'RESOLVED'})-[:EXHIBITS]->(e:ErrorSignature {id: $sigId})
+  MATCH (i)-[:AFFECTS]->(aff:Service)
+  MATCH (r:Resolution)-[:RESOLVES]->(i)
+  MATCH (r)-[:ADDRESSES]->(s:Service)
+  WHERE s.id IN $serviceIds OR aff.id IN $serviceIds
   RETURN i.id AS incidentId, i.title AS title, i.status AS status, e.id AS errorSignatureId,
-         collect(DISTINCT s.id) AS affectedServiceIds,
+         collect(DISTINCT aff.id) AS affectedServiceIds,
+         s.id AS addressedServiceId,
          r.id AS resId, r.title AS resTitle, r.remediationType AS resRemediationType,
-         r.actionTaken AS resActionTaken, r.confirmedAt AS resConfirmedAt, r.confirmedBy AS resConfirmedBy
+         r.actionTaken AS resActionTaken, r.confirmedAt AS resConfirmedAt, r.confirmedBy AS resConfirmedBy,
+         r.source AS resSource
   ORDER BY i.reportedAt DESC
   ```
 - **Verified Sample Result**:
@@ -157,18 +161,20 @@ All queries are executed with bounded traversal depths and strictly parameterize
   title: Payment timeout surge during peak checkout
   errorSignatureId: err-sig-payment-pool-timeout
   affectedServiceIds: [service-payment]
+  addressedServiceId: service-payment
   status: RESOLVED
   resId: res-pay-timeout-fix
-  resTitle: Increase Jedis pool timeout and rollback connection limit
-  resActionTaken: Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.
+  resTitle: Increase HikariCP pool size and connection timeout
+  resActionTaken: Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.
   resRemediationType: CONFIG_CHANGE
   resConfirmedAt: 1786525200000 (2026-08-12 09:00:00 UTC)
   resConfirmedBy: sre-oncall
+  resSource: synthetic
   ```
 
 ### 3.2 `FIND_ALL_DEPLOYMENTS_IN_WINDOW`
 - **Method**: `GraphRepository.findAllDeploymentsInWindow(graphName, windowStart, windowEnd)`
-- **Purpose**: Retrieves all deployments in $[T_{\text{start}}, T_{\text{end}}]$ across the entire graph. The engine partitions results into candidate deployments (services in neighborhood) and `ignoredChanges` (services outside neighborhood).
+- **Purpose**: Retrieves all deployments in $[T_{\text{start}}, T_{\text{end}}]$ across the entire graph including `changeSummary`. The engine partitions results into candidate deployments (services in neighborhood) and `ignoredChanges` (services outside neighborhood).
 - **Parameters**:
   - `windowStart` (long): Epoch ms (reference time minus window, e.g. $T_0 - 24\text{h}$).
   - `windowEnd` (long): Epoch ms (reference time $T_0$). Deployments after $T_0$ are ignored.
@@ -178,14 +184,15 @@ All queries are executed with bounded traversal depths and strictly parameterize
   MATCH (d:Deployment)-[:DEPLOYED_TO]->(s:Service)
   WHERE d.deployedAt >= $windowStart AND d.deployedAt <= $windowEnd
   RETURN d.id AS deploymentId, s.id AS serviceId, d.version AS version,
-         d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy
+         d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy,
+         d.changeSummary AS changeSummary
   ORDER BY d.deployedAt DESC
   ```
 - **Verified Sample Result**:
   ```
-  dep-inventory-v1.5.0    | service-inventory    | v1.5.0 | 1792057800000 (2026-10-15 09:50 UTC) -> candidate
-  dep-notification-v1.8.0 | service-notification | v1.8.0 | 1792057500000 (2026-10-15 09:45 UTC) -> ignoredChanges
-  dep-payment-v2.4.1      | service-payment      | v2.4.1 | 1792056600000 (2026-10-15 09:30 UTC) -> candidate
+  dep-inventory-v1.5.0    | service-inventory    | v1.5.0 | 1792057800000 -> candidate (change: "Added batch stock reservation endpoint")
+  dep-notification-v1.8.0 | service-notification | v1.8.0 | 1792057500000 -> ignoredChanges (change: "Updated email delivery templates...")
+  dep-payment-v2.4.1      | service-payment      | v2.4.1 | 1792056600000 -> candidate (change: "Decreased HikariCP maximumPoolSize...")
   ```
 
 ### 3.3 `VERIFY_RECORD_EXISTS`
@@ -198,9 +205,67 @@ All queries are executed with bounded traversal depths and strictly parameterize
   ```cypher
   MATCH (n {id: $recordId}) RETURN count(n) > 0 AS exists
   ```
-- **Verified Sample Result**:
+
+---
+
+## 4. Resolution Write-Back & Incident Tracking Queries
+
+### 4.1 `CREATE_OR_ENSURE_INCIDENT`
+- **Method**: `GraphRepository.createOrEnsureIncident(graphName, input)`
+- **Purpose**: Idempotently creates or updates an incident node in FalkorDB. Sets `status = 'OPEN'` by default.
+- **Parameters**:
+  - `id` (string): Incident ID.
+  - `title` (string): Incident title.
+  - `status` (string): `'OPEN'`.
+  - `reportedAt` (long): Epoch ms timestamp.
+  - `severity` (string): e.g. `'P1'`, `'P2'`.
+- **Cypher**:
+  ```cypher
+  MERGE (i:Incident {id: $id})
+  ON CREATE SET i.title = $title, i.status = $status, i.reportedAt = $reportedAt, i.severity = $severity, i.source = 'runtime'
+  ON MATCH SET i.title = $title, i.severity = $severity
+  RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity
   ```
-  recordId: 'dep-payment-v2.4.1' -> true
-  recordId: 'inc-2026-08-12-pay'  -> true
-  recordId: 'res-pay-timeout-fix' -> true
+
+### 4.2 `CONFIRM_RESOLUTION` (Atomic Write-Back)
+- **Method**: `GraphRepository.confirmResolution(graphName, incidentId, input, confirmedAt)`
+- **Purpose**: Atomically marks an incident as `RESOLVED`, creates a `Resolution` node with `source: 'user-confirmed'`, and creates edges `[:RESOLVES]`, `[:ADDRESSES]`, and optional `[:TRIGGERED_BY]` in a single transaction. Safe to retry.
+- **Parameters**:
+  - `incidentId` (string): Target incident ID.
+  - `serviceId` (string): Confirmed root cause service ID.
+  - `deploymentId` (string, optional): Citing triggering deployment ID.
+  - `resId` (string): Deterministic resolution ID (`res-<incidentId>`).
+  - `title` (string): Human-verified resolution title.
+  - `remediationType` (string): e.g. `'CONFIG_CHANGE'`.
+  - `actionTaken` (string): Remediation steps executed.
+  - `confirmedAt` (long): Server clock timestamp (strictly non-client).
+  - `confirmedBy` (string): Authenticated operator identity.
+- **Cypher (with optional triggering deployment)**:
+  ```cypher
+  MATCH (i:Incident {id: $incidentId})
+  MATCH (s:Service {id: $serviceId})
+  MATCH (d:Deployment {id: $deploymentId})
+  SET i.status = 'RESOLVED'
+  MERGE (r:Resolution {id: $resId})
+  ON CREATE SET r.title = $title,
+                r.remediationType = $remediationType,
+                r.actionTaken = $actionTaken,
+                r.confirmedAt = $confirmedAt,
+                r.confirmedBy = $confirmedBy,
+                r.source = 'user-confirmed'
+  ON MATCH SET r.title = $title,
+               r.remediationType = $remediationType,
+               r.actionTaken = $actionTaken,
+               r.confirmedAt = $confirmedAt,
+               r.confirmedBy = $confirmedBy,
+               r.source = 'user-confirmed'
+  MERGE (r)-[r1:RESOLVES]->(i)
+  ON CREATE SET r1.source = 'user-confirmed'
+  MERGE (r)-[r2:ADDRESSES]->(s)
+  ON CREATE SET r2.source = 'user-confirmed'
+  MERGE (r)-[r3:TRIGGERED_BY]->(d)
+  ON CREATE SET r3.source = 'user-confirmed'
+  RETURN r.id AS id, r.title AS title, r.remediationType AS remediationType,
+         r.actionTaken AS actionTaken, r.confirmedAt AS confirmedAt,
+         r.confirmedBy AS confirmedBy, r.source AS source
   ```

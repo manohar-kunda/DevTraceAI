@@ -47,29 +47,29 @@ ON MATCH SET s.name = 'redis-cache', s.team = 'Database Infrastructure', s.alias
 
 // --- 2. Deployments ---
 MERGE (d:Deployment {id: 'dep-checkout-v3.0.0'})
-ON CREATE SET d.version = 'v3.0.0', d.deployedAt = 1791453600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v3.0.0', d.deployedAt = 1791453600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v3.0.0', d.deployedAt = 1791453600000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Updated checkout flow UI and cart validation logic', d.source = 'synthetic'
+ON MATCH SET d.version = 'v3.0.0', d.deployedAt = 1791453600000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Updated checkout flow UI and cart validation logic', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-order-v2.1.0'})
-ON CREATE SET d.version = 'v2.1.0', d.deployedAt = 1791885600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v2.1.0', d.deployedAt = 1791885600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v2.1.0', d.deployedAt = 1791885600000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Optimized order placement transaction boundaries', d.source = 'synthetic'
+ON MATCH SET d.version = 'v2.1.0', d.deployedAt = 1791885600000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Optimized order placement transaction boundaries', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-payment-v2.4.1'})
-ON CREATE SET d.version = 'v2.4.1', d.deployedAt = 1792056600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v2.4.1', d.deployedAt = 1792056600000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v2.4.1', d.deployedAt = 1792056600000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Decreased HikariCP maximumPoolSize from 50 to 10 and connectionTimeout to 2000ms on postgres-payments datasource', d.source = 'synthetic'
+ON MATCH SET d.version = 'v2.4.1', d.deployedAt = 1792056600000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Decreased HikariCP maximumPoolSize from 50 to 10 and connectionTimeout to 2000ms on postgres-payments datasource', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-notification-v1.8.0'})
-ON CREATE SET d.version = 'v1.8.0', d.deployedAt = 1792057500000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v1.8.0', d.deployedAt = 1792057500000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v1.8.0', d.deployedAt = 1792057500000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Updated email delivery templates and SMTP retry backoff', d.source = 'synthetic'
+ON MATCH SET d.version = 'v1.8.0', d.deployedAt = 1792057500000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Updated email delivery templates and SMTP retry backoff', d.source = 'synthetic';
 
 MERGE (d:Deployment {id: 'dep-inventory-v1.5.0'})
-ON CREATE SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic'
-ON MATCH SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment = 'production', d.deployedBy = 'github-actions', d.source = 'synthetic';
+ON CREATE SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Added batch stock reservation endpoint', d.source = 'synthetic'
+ON MATCH SET d.version = 'v1.5.0', d.deployedAt = 1792057800000, d.environment = 'production', d.deployedBy = 'github-actions', d.changeSummary = 'Added batch stock reservation endpoint', d.source = 'synthetic';
 
 // --- 3. Error Signatures ---
 MERGE (e:ErrorSignature {id: 'err-sig-payment-pool-timeout'})
-ON CREATE SET e.name = 'Payment Connection Pool Timeout', e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic'
-ON MATCH SET e.name = 'Payment Connection Pool Timeout', e.pattern = 'JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout', e.source = 'synthetic';
+ON CREATE SET e.name = 'Payment Connection Pool Timeout', e.pattern = 'HikariPool-1 / ConnectionTimeoutException: Connection is not available, request timed out after 30000ms', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,hikaripool timeout,pool timeout,pool exhausted,connection not available,hikari pool timeout', e.source = 'synthetic'
+ON MATCH SET e.name = 'Payment Connection Pool Timeout', e.pattern = 'HikariPool-1 / ConnectionTimeoutException: Connection is not available, request timed out after 30000ms', e.errorType = 'TIMEOUT', e.keywords = 'payment timeout,payment timeouts,connection pool timeout,hikaripool timeout,pool timeout,pool exhausted,connection not available,hikari pool timeout', e.source = 'synthetic';
 
 MERGE (e:ErrorSignature {id: 'err-sig-jwt-expired'})
 ON CREATE SET e.name = 'JWT Token Expired / Clock Skew', e.pattern = 'SignatureVerificationException / ClockSkew', e.errorType = 'AUTHENTICATION', e.keywords = 'jwt,expired token,token verification,clock skew,signature verification,auth timeout', e.source = 'synthetic'
@@ -98,8 +98,8 @@ ON CREATE SET r.title = 'Failover to secondary SMTP relay cluster', r.remediatio
 ON MATCH SET r.title = 'Failover to secondary SMTP relay cluster', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Switched outbound notification host config to standby relay pool.', r.confirmedAt = 1784545200000, r.confirmedBy = 'sre-messaging', r.source = 'synthetic';
 
 MERGE (r:Resolution {id: 'res-pay-timeout-fix'})
-ON CREATE SET r.title = 'Increase Jedis pool timeout and rollback connection limit', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.', r.confirmedAt = 1786525200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic'
-ON MATCH SET r.title = 'Increase Jedis pool timeout and rollback connection limit', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap.', r.confirmedAt = 1786525200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic';
+ON CREATE SET r.title = 'Increase HikariCP pool size and connection timeout', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.', r.confirmedAt = 1786525200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic'
+ON MATCH SET r.title = 'Increase HikariCP pool size and connection timeout', r.remediationType = 'CONFIG_CHANGE', r.actionTaken = 'Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.', r.confirmedAt = 1786525200000, r.confirmedBy = 'sre-oncall', r.source = 'synthetic';
 
 MERGE (r:Resolution {id: 'res-auth-ntp-sync'})
 ON CREATE SET r.title = 'Resynchronize NTP clock daemon on auth hosts', r.remediationType = 'RESTART', r.actionTaken = 'Restarted chronyd service and forced immediate NTP time sync across auth host pool.', r.confirmedAt = 1788256800000, r.confirmedBy = 'sec-ops', r.source = 'synthetic'
@@ -189,13 +189,13 @@ MATCH (i:Incident {id: 'inc-2026-09-01-auth'}), (e:ErrorSignature {id: 'err-sig-
 MERGE (i)-[r:EXHIBITS]->(e)
 ON CREATE SET r.source = 'synthetic';
 
-// --- 10. Resolution Relationships (RESOLVES & APPLIES_TO) ---
+// --- 10. Resolution Relationships (RESOLVES & ADDRESSES) ---
 MATCH (r:Resolution {id: 'res-notif-smtp-failover'}), (i:Incident {id: 'inc-2026-07-20-notif'})
 MERGE (r)-[rel:RESOLVES]->(i)
 ON CREATE SET rel.source = 'synthetic';
 
 MATCH (r:Resolution {id: 'res-notif-smtp-failover'}), (s:Service {id: 'service-notification'})
-MERGE (r)-[rel:APPLIES_TO]->(s)
+MERGE (r)-[rel:ADDRESSES]->(s)
 ON CREATE SET rel.source = 'synthetic';
 
 MATCH (r:Resolution {id: 'res-pay-timeout-fix'}), (i:Incident {id: 'inc-2026-08-12-pay'})
@@ -203,7 +203,7 @@ MERGE (r)-[rel:RESOLVES]->(i)
 ON CREATE SET rel.source = 'synthetic';
 
 MATCH (r:Resolution {id: 'res-pay-timeout-fix'}), (s:Service {id: 'service-payment'})
-MERGE (r)-[rel:APPLIES_TO]->(s)
+MERGE (r)-[rel:ADDRESSES]->(s)
 ON CREATE SET rel.source = 'synthetic';
 
 MATCH (r:Resolution {id: 'res-auth-ntp-sync'}), (i:Incident {id: 'inc-2026-09-01-auth'})
@@ -211,5 +211,5 @@ MERGE (r)-[rel:RESOLVES]->(i)
 ON CREATE SET rel.source = 'synthetic';
 
 MATCH (r:Resolution {id: 'res-auth-ntp-sync'}), (s:Service {id: 'service-auth'})
-MERGE (r)-[rel:APPLIES_TO]->(s)
+MERGE (r)-[rel:ADDRESSES]->(s)
 ON CREATE SET rel.source = 'synthetic';

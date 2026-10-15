@@ -54,16 +54,18 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
 
 ## 3. Historical Incidents & Confirmed Resolutions
 
-### Incident A — Matching Historical Anchor (`inc-2026-08-12-pay`)
+#### Incident A — Matching Historical Anchor (`inc-2026-08-12-pay`)
 - **Service Affected**: `service-payment` (`payment-service`)
 - **Reported At**: `1786521600000` (2026-08-12 08:00:00 UTC)
-- **Error Signature**: `err-sig-payment-pool-timeout` (`JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool`)
+- **Error Signature**: `err-sig-payment-pool-timeout` (`HikariPool-1 / ConnectionTimeoutException: Connection is not available, request timed out after 30000ms`)
 - **Status**: `RESOLVED`
 - **Linked Resolution**: `res-pay-timeout-fix`
-  - *Title*: "Increase Jedis pool timeout and rollback connection limit"
-  - *Confirmed At**: `1786525200000` (2026-08-12 09:00:00 UTC; $+1\text{ hour}$ after reported)
-  - *Action Taken*: "Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap."
+  - *Title*: "Increase HikariCP pool size and connection timeout"
+  - *Confirmed At*: `1786525200000` (2026-08-12 09:00:00 UTC; $+1\text{ hour}$ after reported)
+  - *Action Taken*: "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource."
   - *Remediation Type*: `CONFIG_CHANGE`
+  - *Addressed Service*: `service-payment` (via `[:ADDRESSES]`)
+  - *Source*: `synthetic`
 
 ### Incident B — Semantic Distractor (`inc-2026-09-01-auth`)
 - **Service Affected**: `service-auth` (`auth-service`)
@@ -73,7 +75,7 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
 - **Status**: `RESOLVED`
 - **Linked Resolution**: `res-auth-ntp-sync`
   - *Title*: "Resynchronize NTP clock daemon on auth hosts"
-  - *Confirmed At**: `1788256800000` (2026-09-01 10:00:00 UTC; $+1\text{ hour}$ after reported)
+  - *Confirmed At*: `1788256800000` (2026-09-01 10:00:00 UTC; $+1\text{ hour}$ after reported)
 - **Purpose**: Proves that structured graph matching on `(:Incident)-[:EXHIBITS]->(:ErrorSignature)` correctly rejects auth fixes, despite overlapping free-text keywords.
 
 ### Incident C — Unrelated Historical Baseline (`inc-2026-07-20-notif`)
@@ -82,7 +84,7 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
 - **Error Signature**: `err-sig-smtp-disconnect`
 - **Status**: `RESOLVED`
 - **Linked Resolution**: `res-notif-smtp-failover`
-  - *Confirmed At**: `1784545200000` (2026-07-20 11:00:00 UTC; $+1\text{ hour}$ after reported)
+  - *Confirmed At*: `1784545200000` (2026-07-20 11:00:00 UTC; $+1\text{ hour}$ after reported)
 
 ---
 
@@ -104,8 +106,8 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
      - Direct downstream (1 hop): `service-inventory`, `service-order`.
      - Indirect downstream (2+ hops): `service-payment`, `service-postgres-orders`, `service-postgres-payments`, `service-redis-cache`.
   4. Change correlation: Queries deployments on traversed services within 24 hours of $T_0$.
-     - Discovers `dep-inventory-v1.5.0` on `service-inventory` ($T - 10\text{ min}$).
-     - Discovers `dep-payment-v2.4.1` on `service-payment` ($T - 30\text{ min}$).
+     - Discovers `dep-inventory-v1.5.0` on `service-inventory` ($T - 10\text{ min}$; changeSummary: *"Added batch stock reservation endpoint"*).
+     - Discovers `dep-payment-v2.4.1` on `service-payment` ($T - 30\text{ min}$; changeSummary: *"Decreased HikariCP maximumPoolSize from 50 to 10 and connectionTimeout to 2000ms on postgres-payments datasource"*).
      - Rejects `dep-notification-v1.8.0` on `service-notification`: Outside candidate dependency neighborhood; listed as *"recent changes outside the dependency neighborhood, not considered"*.
   5. Shortest path computation:
      ```cypher
@@ -114,18 +116,19 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
      RETURN [n in nodes(p) | n.name] AS path
      ```
      - Returns: `["checkout-service", "order-service", "payment-service"]`.
-  6. Historical resolution lookup: Finds `inc-2026-08-12-pay` exhibiting `err-sig-payment-pool-timeout` on `service-payment`.
+  6. Historical resolution lookup: Finds `inc-2026-08-12-pay` (`status: 'RESOLVED'`) exhibiting `err-sig-payment-pool-timeout` and addressed via `(r:Resolution)-[:ADDRESSES]->(service-payment)`.
 
-- **Rule-Based Candidate Cause Ranking (Verified in Checkpoint 7)**:
+- **Rule-Based Candidate Cause Ranking (Status: `HYPOTHESES_RANKED`)**:
   - **Rank 1 (`STRONG` Tier)**: `service-payment` (`payment-service`, 2 hops).
-    - *Evidence*: Recent deployment `dep-payment-v2.4.1` (30m prior to $T_0$) AND historical incident `inc-2026-08-12-pay` matching error signature `err-sig-payment-pool-timeout`.
-    - *Confirmed Resolution*: `res-pay-timeout-fix` ("Increase Jedis pool timeout and rollback connection limit").
+    - *Evidence*: Recent deployment `dep-payment-v2.4.1` (30m prior to $T_0$, ISO: `2026-10-15T09:30:00Z`) AND historical incident `inc-2026-08-12-pay` where the same service was affected by the same error signature.
+    - *Confirmed Resolution*: `res-pay-timeout-fix` ("Increase HikariCP pool size and connection timeout").
+    - *Suggested Step*: `"Consider the previously confirmed remediation res-pay-timeout-fix (from a different incident: inc-2026-08-12-pay): Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource."`
   - **Rank 2 (`MODERATE` Tier)**: `service-inventory` (`inventory-service`, 1 hop).
-    - *Evidence*: Recent deployment `dep-inventory-v1.5.0` (10m prior to $T_0$), but zero error signature affinity and no past incidents.
+    - *Evidence*: Recent deployment `dep-inventory-v1.5.0` (10m prior to $T_0$), but no matching error signature and no past incidents on this service.
     - *Comparison*: Although topologically closer (1 hop vs 2 hops) and deployed more recently (10m vs 30m), `inventory-service` ranks below `payment-service` because proximity and recency are tie-breakers within tiers, never overriding multi-factor evidence.
-  - **Ranks 3–7 (`WEAK` Tier)**: `service-checkout` (0 hops), `service-order` (1 hop), `service-postgres-orders` (2 hops), `service-postgres-payments` (3 hops), `service-redis-cache` (3 hops).
-    - *Evidence*: Reachable in downstream dependency chain, but zero deployments in window and no historical signature matches.
-  - **Excluded Changes (`ignoredChanges`)**: `dep-notification-v1.8.0` on `service-notification`. Outside the candidate neighborhood; recorded as *"recent changes outside the dependency neighborhood, not considered"*.
+  - **Other Services in Neighborhood (`otherServicesInNeighborhood`)**: `service-checkout` (0 hops), `service-order` (1 hop), `service-postgres-orders` (2 hops), `service-postgres-payments` (3 hops), `service-redis-cache` (3 hops).
+    - *Representation*: Compact `[{ "id": "...", "name": "...", "hops": ... }]` list; separated from actionable hypotheses.
+  - **Excluded Changes (`ignoredChanges`)**: `dep-notification-v1.8.0` on `service-notification`. Outside candidate neighborhood; recorded as *"recent changes outside the dependency neighborhood, not considered"*.
 
 ---
 
@@ -187,24 +190,108 @@ Assume current incident occurs at $T_0 =$ `1792058400000` (2026-10-15 10:00:00 U
 ---
 
 ### ACT 4 — Resolution Write-Back & Knowledge Evolution
-1. **User Action**: The on-call engineer mitigates ACT 1 and calls `POST /api/resolutions/confirm`:
+
+1. **Active Open Incident State (Before Write-Back)**:
+   An incident node `inc-2026-10-15-checkout-001` exists in FalkorDB with status `OPEN`:
+   ```cypher
+   MERGE (i:Incident {id: 'inc-2026-10-15-checkout-001'})
+   ON CREATE SET i.title = 'Payment timeout surge post deployment v2.4.1',
+                 i.status = 'OPEN',
+                 i.reportedAt = 1792056600000,
+                 i.severity = 'P1',
+                 i.source = 'runtime';
+   MATCH (i:Incident {id: 'inc-2026-10-15-checkout-001'}), (s:Service {id: 'service-checkout'})
+   MERGE (i)-[:AFFECTS]->(s);
+   MATCH (i:Incident {id: 'inc-2026-10-15-checkout-001'}), (e:ErrorSignature {id: 'err-sig-payment-pool-timeout'})
+   MERGE (i)-[:EXHIBITS]->(e);
+   ```
+
+2. **Investigation Query Before Resolution Write-Back**:
+   When an investigation runs, `findSimilarIncidents` enforces `i.status = 'RESOLVED'` and traverses `(r:Resolution)-[:ADDRESSES]->(s:Service)`.
+   Therefore, active `OPEN` incidents are **strictly excluded** from historical evidence.
+   - *Result*: Only the single synthetic seed incident (`inc-2026-08-12-pay`) matches.
+   ```json
+   [
+     {
+       "incidentId": "inc-2026-08-12-pay",
+       "title": "Payment timeout surge during peak checkout",
+       "errorSignatureId": "err-sig-payment-pool-timeout",
+       "affectedServiceIds": ["service-payment"],
+       "status": "RESOLVED",
+       "confirmedResolution": {
+         "id": "res-pay-timeout-fix",
+         "title": "Increase HikariCP pool size and connection timeout",
+         "remediationType": "CONFIG_CHANGE",
+         "actionTaken": "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.",
+         "confirmedAt": 1786525200000,
+         "confirmedBy": "sre-oncall",
+         "source": "synthetic"
+       }
+     }
+   ]
+   ```
+
+3. **User Mitigation Action**:
+   After manual investigation and verification, on-call engineer Alice confirms the root cause and remediation via `ResolutionService.confirmResolution()`:
    ```json
    {
-     "incidentId": "inc-2026-10-15-checkout",
-     "serviceId": "service-payment",
-     "title": "Roll back Jedis connection pool cap to 50",
+     "incidentId": "inc-2026-10-15-checkout-001",
+     "rootCauseServiceId": "service-payment",
+     "title": "Roll back HikariCP pool limit and increase timeout",
      "remediationType": "CONFIG_CHANGE",
-     "actionTaken": "Reverted connection pool limit constraint in Helm values and restarted payment-service pods.",
-     "confirmedBy": "oncall-dev"
+     "actionTaken": "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.",
+     "confirmedBy": "sre-alice",
+     "triggeringDeploymentId": "dep-payment-v2.4.1"
    }
    ```
-2. **Graph Persistence**:
-   - Creates `(:Resolution {id: 'res-2026-10-15-pool-fix'})`.
-   - Links `(res)-[:RESOLVES]->(inc-2026-10-15-checkout)`.
-   - Links `(res)-[:APPLIES_TO]->(service-payment)`.
-3. **Subsequent Investigation**:
-   A new incident is submitted: *"Orders timing out during payment gateway handoff"*.
-   - **System Behavior**: The investigation retrieves BOTH the historical `res-pay-timeout-fix` AND the newly written `res-2026-10-15-pool-fix`, demonstrating that DevTrace AI gets smarter with each confirmed resolution.
+   - **Atomic FalkorDB Persistence**:
+     - `inc-2026-10-15-checkout-001.status` is set to `'RESOLVED'`.
+     - `(:Resolution {id: 'res-inc-2026-10-15-checkout-001'})` is created with `source: 'user-confirmed'`, `confirmedAt` injected from server clock, and `confirmedBy: 'sre-alice'`.
+     - `(res)-[:RESOLVES]->(inc-2026-10-15-checkout-001)`.
+     - `(res)-[:ADDRESSES]->(service-payment)`.
+     - `(res)-[:TRIGGERED_BY]->(dep-payment-v2.4.1)`.
+
+4. **Subsequent Investigation (Knowledge Evolution Verified)**:
+   A new incident occurs: *"Orders timing out during payment gateway handoff with connection pool exhaustion"*.
+   The investigation engine queries `findSimilarIncidents`:
+   - *Result*: Now returns **BOTH** the synthetic baseline (`inc-2026-08-12-pay`) and the newly confirmed production knowledge (`inc-2026-10-15-checkout-001`), with full provenance!
+   ```json
+   [
+     {
+       "incidentId": "inc-2026-10-15-checkout-001",
+       "title": "Payment timeout surge post deployment v2.4.1",
+       "errorSignatureId": "err-sig-payment-pool-timeout",
+       "affectedServiceIds": ["service-checkout", "service-payment"],
+       "status": "RESOLVED",
+       "confirmedResolution": {
+         "id": "res-inc-2026-10-15-checkout-001",
+         "title": "Roll back HikariCP pool limit and increase timeout",
+         "remediationType": "CONFIG_CHANGE",
+         "actionTaken": "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.",
+         "confirmedAt": 1792058400000,
+         "confirmedBy": "sre-alice",
+         "source": "user-confirmed"
+       }
+     },
+     {
+       "incidentId": "inc-2026-08-12-pay",
+       "title": "Payment timeout surge during peak checkout",
+       "errorSignatureId": "err-sig-payment-pool-timeout",
+       "affectedServiceIds": ["service-payment"],
+       "status": "RESOLVED",
+       "confirmedResolution": {
+         "id": "res-pay-timeout-fix",
+         "title": "Increase HikariCP pool size and connection timeout",
+         "remediationType": "CONFIG_CHANGE",
+         "actionTaken": "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.",
+         "confirmedAt": 1786525200000,
+         "confirmedBy": "sre-oncall",
+         "source": "synthetic"
+       }
+     }
+   ]
+   ```
+   **Key Takeaway**: DevTrace AI gets demonstrably smarter with every human-confirmed resolution while rejecting speculative hypotheses or unconfirmed suggestions from entering the graph.
 
 ---
 

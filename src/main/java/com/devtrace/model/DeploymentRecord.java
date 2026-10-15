@@ -9,5 +9,17 @@ public record DeploymentRecord(
         String version,
         long deployedAt,
         String environment,
-        String deployedBy
-) {}
+        String deployedBy,
+        String changeSummary
+) {
+    public DeploymentRecord(
+            String deploymentId,
+            String serviceId,
+            String version,
+            long deployedAt,
+            String environment,
+            String deployedBy
+    ) {
+        this(deploymentId, serviceId, version, deployedAt, environment, deployedBy, "");
+    }
+}

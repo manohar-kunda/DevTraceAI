@@ -217,11 +217,16 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
             if (!serviceDeps.isEmpty()) {
                 DeploymentRecord latestDep = serviceDeps.get(0);
                 mostRecentChange = latestDep.deployedAt();
+                long minutesBefore = (referenceTime - latestDep.deployedAt()) / (60 * 1000);
+                String isoTime = java.time.Instant.ofEpochMilli(latestDep.deployedAt()).toString();
+                String changeSummaryText = (latestDep.changeSummary() != null && !latestDep.changeSummary().isBlank())
+                        ? latestDep.changeSummary()
+                        : "No change summary recorded.";
                 evidenceItems.add(new EvidenceItem(
                         "findRecentDeployments",
                         latestDep.deploymentId(),
                         "DEPLOYMENT",
-                        "Recent deployment " + latestDep.version() + " deployed at " + latestDep.deployedAt() + " within 24h window"
+                        "Recent deployment " + latestDep.version() + " deployed at " + isoTime + " (" + latestDep.deployedAt() + ", " + minutesBefore + "m before incident). Change summary: " + changeSummaryText
                 ));
             }
 
@@ -232,7 +237,7 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
                         "findSimilarIncidents",
                         inc.incidentId(),
                         "HISTORICAL_INCIDENT",
-                        "Historically affected by signature " + inc.errorSignatureId() + " in incident " + inc.incidentId() + " (" + inc.title() + ")"
+                        "The same service was affected by the same error signature in " + inc.incidentId() + " (" + inc.title() + ")"
                 ));
                 if (inc.hasConfirmedResolution()) {
                     confirmedRes = inc.confirmedResolution();
@@ -240,17 +245,12 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
                         "findSimilarIncidents",
                         confirmedRes.id(),
                         "CONFIRMED_RESOLUTION",
-                        "Confirmed resolution " + confirmedRes.id() + ": " + confirmedRes.title()
+                        "Consider the previously confirmed remediation " + confirmedRes.id() + " (from a different incident: " + inc.incidentId() + "): " + confirmedRes.title()
                     ));
                 }
             }
 
-            evidenceItems.add(new EvidenceItem(
-                    "findDependencies",
-                    cId,
-                    "HOP_DISTANCE",
-                    "Downstream distance: " + hopDistance + " hop(s) from symptom service " + symptomService.serviceId()
-            ));
+            // hopDistance is a direct field on CandidateHypothesis, not an EvidenceItem.
 
             boolean hasDeployment = !serviceDeps.isEmpty();
             boolean hasSignatureEvidence = !serviceIncidents.isEmpty();
@@ -260,14 +260,14 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
 
             if (hasDeployment && hasSignatureEvidence) {
                 tier = RankingTier.STRONG;
-                reason = "Recent deployment (" + serviceDeps.get(0).version() + ") in window AND historical incident (" +
-                        serviceIncidents.get(0).incidentId() + ") confirms susceptibility to matching error signature.";
+                reason = "Recent deployment (" + serviceDeps.get(0).version() + ") in window and the same service was affected by the same error signature in " +
+                        serviceIncidents.get(0).incidentId() + ".";
             } else if (hasDeployment) {
                 tier = RankingTier.MODERATE;
                 reason = "Recent deployment (" + serviceDeps.get(0).version() + ") in window, but no historical incidents match the error signature on this service.";
             } else if (hasSignatureEvidence) {
                 tier = RankingTier.MODERATE;
-                reason = "Historically affected by matching error signature (" + serviceIncidents.get(0).incidentId() + "), but no deployments recorded within the 24h window.";
+                reason = "The same service was affected by matching error signature in " + serviceIncidents.get(0).incidentId() + ", but no deployments recorded within the 24h window.";
             } else {
                 tier = RankingTier.WEAK;
                 reason = "Reachable in downstream dependency chain at " + hopDistance + " hop(s), but has no recent deployments and no historical signature matches.";
@@ -314,33 +314,39 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
             return a.serviceId().compareTo(b.serviceId());
         });
 
-        // Re-assign 1-based ranks
-        List<CandidateHypothesis> rankedHypotheses = new ArrayList<>();
-        for (int i = 0; i < hypotheses.size(); i++) {
-            CandidateHypothesis h = hypotheses.get(i);
-            rankedHypotheses.add(new CandidateHypothesis(
-                    h.serviceId(),
-                    h.serviceName(),
-                    h.tier(),
-                    i + 1,
-                    h.hopDistance(),
-                    h.mostRecentChangeTimestamp(),
-                    h.evidence(),
-                    h.plainLanguageReason(),
-                    h.hasConfirmedResolution(),
-                    h.confirmedResolution()
-            ));
+        // 8. Partition into STRONG/MODERATE (hypotheses) and WEAK (otherServicesInNeighborhood)
+        List<CandidateHypothesis> strongAndModerate = new ArrayList<>();
+        List<OtherServiceNode> otherServices = new ArrayList<>();
+
+        int currentRank = 1;
+        for (CandidateHypothesis h : hypotheses) {
+            if (h.tier() == RankingTier.STRONG || h.tier() == RankingTier.MODERATE) {
+                strongAndModerate.add(new CandidateHypothesis(
+                        h.serviceId(),
+                        h.serviceName(),
+                        h.tier(),
+                        currentRank++,
+                        h.hopDistance(),
+                        h.mostRecentChangeTimestamp(),
+                        h.evidence(),
+                        h.plainLanguageReason(),
+                        h.hasConfirmedResolution(),
+                        h.confirmedResolution()
+                ));
+            } else {
+                otherServices.add(new OtherServiceNode(h.serviceId(), h.serviceName(), h.hopDistance()));
+            }
         }
 
-        // 8. Determine Status and Next Steps
-        boolean hasViableCandidate = !rankedHypotheses.isEmpty() && rankedHypotheses.get(0).tier() != RankingTier.WEAK;
-        String status = hasViableCandidate ? "RESOLVED_HYPOTHESIS" : "INSUFFICIENT_EVIDENCE";
+        // 9. Determine Status and Next Steps
+        boolean hasViableCandidate = !strongAndModerate.isEmpty();
+        String status = hasViableCandidate ? "HYPOTHESES_RANKED" : "INSUFFICIENT_EVIDENCE";
 
-        CandidateHypothesis topCandidate = rankedHypotheses.isEmpty() ? null : rankedHypotheses.get(0);
+        CandidateHypothesis topCandidate = strongAndModerate.isEmpty() ? null : strongAndModerate.get(0);
 
-        // 9. Graph Relationships: Paths from symptom to candidates & blast radius
+        // 10. Graph Relationships: Paths from symptom to candidates & blast radius
         Map<String, DependencyPath> paths = new LinkedHashMap<>();
-        for (CandidateHypothesis h : rankedHypotheses) {
+        for (CandidateHypothesis h : strongAndModerate) {
             if (h.hopDistance() > 0) {
                 graphRepository.findDependencyPath(graphName, symptomService.serviceId(), h.serviceId(), maxDownstreamDepth + 1)
                         .ifPresent(p -> paths.put(h.serviceId(), p));
@@ -355,7 +361,7 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
                 blastRadius
         );
 
-        // 10. Suggested Next Steps
+        // 11. Suggested Next Steps
         List<SuggestedNextStep> nextSteps = new ArrayList<>();
         if (hasViableCandidate && topCandidate != null) {
             if (topCandidate.hasConfirmedResolution()) {
@@ -394,7 +400,8 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
                 entryPoints,
                 observedFacts,
                 graphRelationships,
-                Collections.unmodifiableList(rankedHypotheses),
+                Collections.unmodifiableList(strongAndModerate),
+                Collections.unmodifiableList(otherServices),
                 Collections.unmodifiableList(ignoredChanges),
                 Collections.unmodifiableList(nextSteps),
                 Collections.unmodifiableList(limitations),
@@ -423,6 +430,7 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
                 entryPoints,
                 observedFacts,
                 emptyRelationships,
+                List.of(),
                 List.of(),
                 List.of(),
                 nextSteps,

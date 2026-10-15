@@ -13,7 +13,7 @@ public record SuggestedNextStep(
     public static SuggestedNextStep fromConfirmedResolution(ResolutionRecord res) {
         return new SuggestedNextStep(
                 "FROM_CONFIRMED_RESOLUTION",
-                "Apply proven remediation (" + res.id() + ")",
+                "Consider the previously confirmed remediation " + res.id() + " (from a different incident)",
                 res.actionTaken(),
                 res.id()
         );

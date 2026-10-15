@@ -199,4 +199,13 @@ class FalkorSeedIntegrationIT {
         });
         assertTrue(ex.getMessage().contains("Safety violation"), "Must refuse reset on non-whitelisted graphs");
     }
+
+    @Test
+    @Order(8)
+    @DisplayName("Seed default graph devtrace with canonical golden scenario")
+    void testSeedDefaultGraph() {
+        SeedResult result = seedService.seed("devtrace", true);
+        assertEquals(24L, result.totalNodes(), "Total nodes in devtrace must be 24");
+        assertEquals(26L, result.totalRelationships(), "Total relationships in devtrace must be 26");
+    }
 }

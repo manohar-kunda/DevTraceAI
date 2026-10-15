@@ -5,16 +5,17 @@ import com.falkordb.Driver;
 import com.falkordb.Graph;
 import com.falkordb.Record;
 import com.falkordb.ResultSet;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
 
+/**
+ * FalkorDB graph repository implementation for DevTrace AI.
+ * Communicates with FalkorDB over the binary Redis protocol via Jedis / JFalkorDB.
+ * Enforces parameterization on all dynamic values to prevent injection.
+ */
 @Repository
 public class FalkorGraphRepository implements GraphRepository {
-
-    private static final Logger log = LoggerFactory.getLogger(FalkorGraphRepository.class);
 
     private final Driver driver;
 
@@ -195,14 +196,17 @@ public class FalkorGraphRepository implements GraphRepository {
 
         Graph graph = driver.graph(graphName);
         String cypher = """
-            MATCH (i:Incident)-[:EXHIBITS]->(e:ErrorSignature {id: $sigId})
-            MATCH (i)-[:AFFECTS]->(s:Service)
-            WHERE s.id IN $serviceIds
-            OPTIONAL MATCH (r:Resolution)-[:RESOLVES]->(i)
+            MATCH (i:Incident {status: 'RESOLVED'})-[:EXHIBITS]->(e:ErrorSignature {id: $sigId})
+            MATCH (i)-[:AFFECTS]->(aff:Service)
+            MATCH (r:Resolution)-[:RESOLVES]->(i)
+            MATCH (r)-[:ADDRESSES]->(s:Service)
+            WHERE s.id IN $serviceIds OR aff.id IN $serviceIds
             RETURN i.id AS incidentId, i.title AS title, i.status AS status, e.id AS errorSignatureId,
-                   collect(DISTINCT s.id) AS affectedServiceIds,
+                   collect(DISTINCT aff.id) AS affectedServiceIds,
+                   s.id AS addressedServiceId,
                    r.id AS resId, r.title AS resTitle, r.remediationType AS resRemediationType,
-                   r.actionTaken AS resActionTaken, r.confirmedAt AS resConfirmedAt, r.confirmedBy AS resConfirmedBy
+                   r.actionTaken AS resActionTaken, r.confirmedAt AS resConfirmedAt, r.confirmedBy AS resConfirmedBy,
+                   r.source AS resSource
             ORDER BY i.reportedAt DESC
         """;
 
@@ -219,12 +223,16 @@ public class FalkorGraphRepository implements GraphRepository {
             String title = rec.getString("title");
             String status = rec.getString("status");
             String sigId = rec.getString("errorSignatureId");
-            List<String> affectedServices = extractStringList(rec.getValue("affectedServiceIds"));
+            List<String> affectedServices = new ArrayList<>(extractStringList(rec.getValue("affectedServiceIds")));
+            String addressedServiceId = rec.getString("addressedServiceId");
+            if (addressedServiceId != null && !affectedServices.contains(addressedServiceId)) {
+                affectedServices.add(addressedServiceId);
+            }
 
             List<String> matchReasons = List.of(
                     "Matches ErrorSignature: " + sigId,
                     "Affects candidate service(s): " + String.join(", ", affectedServices),
-                    "Service is within topological candidate neighborhood"
+                    "Confirmed resolution addresses root cause service: " + (addressedServiceId != null ? addressedServiceId : "unknown")
             );
 
             ResolutionRecord resRecord = null;
@@ -236,11 +244,28 @@ public class FalkorGraphRepository implements GraphRepository {
                 String resActionTaken = rec.getString("resActionTaken");
                 long resConfirmedAt = ((Number) rec.getValue("resConfirmedAt")).longValue();
                 String resConfirmedBy = rec.getString("resConfirmedBy");
+                String resSource = rec.getString("resSource");
 
-                resRecord = new ResolutionRecord(resId, resTitle, resRemediationType, resActionTaken, resConfirmedAt, resConfirmedBy);
+                resRecord = new ResolutionRecord(
+                        resId,
+                        resTitle,
+                        resRemediationType,
+                        resActionTaken,
+                        resConfirmedAt,
+                        resConfirmedBy,
+                        resSource != null ? resSource : "synthetic"
+                );
             }
 
-            records.add(new SimilarIncidentRecord(incidentId, title, sigId, affectedServices, status, matchReasons, resRecord));
+            records.add(new SimilarIncidentRecord(
+                    incidentId,
+                    title,
+                    sigId,
+                    Collections.unmodifiableList(affectedServices),
+                    status,
+                    matchReasons,
+                    resRecord
+            ));
         }
 
         return Collections.unmodifiableList(records);
@@ -257,7 +282,8 @@ public class FalkorGraphRepository implements GraphRepository {
             MATCH (d:Deployment)-[:DEPLOYED_TO]->(s:Service)
             WHERE s.id IN $serviceIds AND d.deployedAt >= $windowStart AND d.deployedAt <= $windowEnd
             RETURN d.id AS deploymentId, s.id AS serviceId, d.version AS version,
-                   d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy
+                   d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy,
+                   d.changeSummary AS changeSummary
             ORDER BY d.deployedAt DESC
         """;
 
@@ -277,8 +303,17 @@ public class FalkorGraphRepository implements GraphRepository {
             long deployedAt = ((Number) rec.getValue("deployedAt")).longValue();
             String env = rec.getString("environment");
             String deployedBy = rec.getString("deployedBy");
+            String changeSummary = rec.getString("changeSummary");
 
-            deployments.add(new DeploymentRecord(deploymentId, serviceId, version, deployedAt, env, deployedBy));
+            deployments.add(new DeploymentRecord(
+                    deploymentId,
+                    serviceId,
+                    version,
+                    deployedAt,
+                    env,
+                    deployedBy,
+                    changeSummary != null ? changeSummary : ""
+            ));
         }
 
         return Collections.unmodifiableList(deployments);
@@ -295,7 +330,8 @@ public class FalkorGraphRepository implements GraphRepository {
             MATCH (d:Deployment)-[:DEPLOYED_TO]->(s:Service)
             WHERE d.deployedAt >= $windowStart AND d.deployedAt <= $windowEnd
             RETURN d.id AS deploymentId, s.id AS serviceId, d.version AS version,
-                   d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy
+                   d.deployedAt AS deployedAt, d.environment AS environment, d.deployedBy AS deployedBy,
+                   d.changeSummary AS changeSummary
             ORDER BY d.deployedAt DESC
         """;
 
@@ -314,8 +350,17 @@ public class FalkorGraphRepository implements GraphRepository {
             long deployedAt = ((Number) rec.getValue("deployedAt")).longValue();
             String env = rec.getString("environment");
             String deployedBy = rec.getString("deployedBy");
+            String changeSummary = rec.getString("changeSummary");
 
-            deployments.add(new DeploymentRecord(deploymentId, serviceId, version, deployedAt, env, deployedBy));
+            deployments.add(new DeploymentRecord(
+                    deploymentId,
+                    serviceId,
+                    version,
+                    deployedAt,
+                    env,
+                    deployedBy,
+                    changeSummary != null ? changeSummary : ""
+            ));
         }
 
         return Collections.unmodifiableList(deployments);
@@ -337,6 +382,232 @@ public class FalkorGraphRepository implements GraphRepository {
             return Boolean.TRUE.equals(it.next().getValue("exists"));
         }
         return false;
+    }
+
+    @Override
+    public boolean serviceExists(String graphName, String serviceId) {
+        if (serviceId == null || serviceId.isBlank()) return false;
+        Graph graph = driver.graph(graphName);
+        ResultSet rs = graph.readOnlyQuery("MATCH (s:Service {id: $serviceId}) RETURN count(s) > 0 AS exists", Map.of("serviceId", serviceId));
+        Iterator<Record> it = rs.iterator();
+        return it.hasNext() && Boolean.TRUE.equals(it.next().getValue("exists"));
+    }
+
+    @Override
+    public boolean deploymentExists(String graphName, String deploymentId) {
+        if (deploymentId == null || deploymentId.isBlank()) return false;
+        Graph graph = driver.graph(graphName);
+        ResultSet rs = graph.readOnlyQuery("MATCH (d:Deployment {id: $deploymentId}) RETURN count(d) > 0 AS exists", Map.of("deploymentId", deploymentId));
+        Iterator<Record> it = rs.iterator();
+        return it.hasNext() && Boolean.TRUE.equals(it.next().getValue("exists"));
+    }
+
+    @Override
+    public Optional<IncidentRecord> findIncidentById(String graphName, String incidentId) {
+        if (incidentId == null || incidentId.isBlank()) return Optional.empty();
+        Graph graph = driver.graph(graphName);
+        ResultSet rs = graph.readOnlyQuery(
+                "MATCH (i:Incident {id: $incidentId}) RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity",
+                Map.of("incidentId", incidentId)
+        );
+        Iterator<Record> it = rs.iterator();
+        if (it.hasNext()) {
+            Record rec = it.next();
+            return Optional.of(new IncidentRecord(
+                    rec.getString("id"),
+                    rec.getString("title"),
+                    rec.getString("status"),
+                    ((Number) rec.getValue("reportedAt")).longValue(),
+                    rec.getString("severity")
+            ));
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public IncidentRecord createOrEnsureIncident(String graphName, IncidentInput input) {
+        Objects.requireNonNull(input, "input cannot be null");
+        Graph graph = driver.graph(graphName);
+
+        String status = input.status() != null && !input.status().isBlank() ? input.status() : "OPEN";
+
+        String cypher = """
+            MERGE (i:Incident {id: $id})
+            ON CREATE SET i.title = $title, i.status = $status, i.reportedAt = $reportedAt, i.severity = $severity, i.source = 'runtime'
+            ON MATCH SET i.title = $title, i.severity = $severity
+            RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity
+        """;
+
+        Map<String, Object> params = Map.of(
+                "id", input.id(),
+                "title", input.title(),
+                "status", status,
+                "reportedAt", input.reportedAt(),
+                "severity", input.severity()
+        );
+
+        ResultSet rs = graph.query(cypher, params);
+        Iterator<Record> it = rs.iterator();
+        if (!it.hasNext()) {
+            throw new IllegalStateException("Failed to create or ensure incident node for ID: " + input.id());
+        }
+        Record rec = it.next();
+        IncidentRecord created = new IncidentRecord(
+                rec.getString("id"),
+                rec.getString("title"),
+                rec.getString("status"),
+                ((Number) rec.getValue("reportedAt")).longValue(),
+                rec.getString("severity")
+        );
+
+        if (input.symptomServiceId() != null && !input.symptomServiceId().isBlank()) {
+            graph.query(
+                    "MATCH (i:Incident {id: $id}), (s:Service {id: $sId}) MERGE (i)-[r:AFFECTS]->(s) ON CREATE SET r.source = 'runtime'",
+                    Map.of("id", input.id(), "sId", input.symptomServiceId())
+            );
+        }
+
+        if (input.errorSignatureId() != null && !input.errorSignatureId().isBlank()) {
+            graph.query(
+                    "MATCH (i:Incident {id: $id}), (e:ErrorSignature {id: $eId}) MERGE (i)-[r:EXHIBITS]->(e) ON CREATE SET r.source = 'runtime'",
+                    Map.of("id", input.id(), "eId", input.errorSignatureId())
+            );
+        }
+
+        return created;
+    }
+
+    @Override
+    public Optional<ResolutionRecord> findResolutionByIncidentId(String graphName, String incidentId) {
+        if (incidentId == null || incidentId.isBlank()) return Optional.empty();
+        Graph graph = driver.graph(graphName);
+        ResultSet rs = graph.readOnlyQuery(
+                "MATCH (r:Resolution)-[:RESOLVES]->(i:Incident {id: $incidentId}) " +
+                "RETURN r.id AS id, r.title AS title, r.remediationType AS remediationType, " +
+                "       r.actionTaken AS actionTaken, r.confirmedAt AS confirmedAt, " +
+                "       r.confirmedBy AS confirmedBy, r.source AS source",
+                Map.of("incidentId", incidentId)
+        );
+        Iterator<Record> it = rs.iterator();
+        if (it.hasNext()) {
+            Record rec = it.next();
+            return Optional.of(new ResolutionRecord(
+                    rec.getString("id"),
+                    rec.getString("title"),
+                    rec.getString("remediationType"),
+                    rec.getString("actionTaken"),
+                    ((Number) rec.getValue("confirmedAt")).longValue(),
+                    rec.getString("confirmedBy"),
+                    rec.getString("source")
+            ));
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public ResolutionRecord confirmResolution(String graphName, String incidentId, ResolutionInput input, long confirmedAt) {
+        Objects.requireNonNull(input, "input cannot be null");
+        Graph graph = driver.graph(graphName);
+
+        String resId = "res-" + incidentId;
+        boolean hasDeployment = input.triggeringDeploymentId() != null && !input.triggeringDeploymentId().isBlank();
+
+        String cypher;
+        Map<String, Object> params;
+
+        if (hasDeployment) {
+            cypher = """
+                MATCH (i:Incident {id: $incidentId})
+                MATCH (s:Service {id: $serviceId})
+                MATCH (d:Deployment {id: $deploymentId})
+                SET i.status = 'RESOLVED'
+                MERGE (r:Resolution {id: $resId})
+                ON CREATE SET r.title = $title,
+                              r.remediationType = $remediationType,
+                              r.actionTaken = $actionTaken,
+                              r.confirmedAt = $confirmedAt,
+                              r.confirmedBy = $confirmedBy,
+                              r.source = 'user-confirmed'
+                ON MATCH SET r.title = $title,
+                             r.remediationType = $remediationType,
+                             r.actionTaken = $actionTaken,
+                             r.confirmedAt = $confirmedAt,
+                             r.confirmedBy = $confirmedBy,
+                             r.source = 'user-confirmed'
+                MERGE (r)-[r1:RESOLVES]->(i)
+                ON CREATE SET r1.source = 'user-confirmed'
+                MERGE (r)-[r2:ADDRESSES]->(s)
+                ON CREATE SET r2.source = 'user-confirmed'
+                MERGE (r)-[r3:TRIGGERED_BY]->(d)
+                ON CREATE SET r3.source = 'user-confirmed'
+                RETURN r.id AS id, r.title AS title, r.remediationType AS remediationType,
+                       r.actionTaken AS actionTaken, r.confirmedAt AS confirmedAt,
+                       r.confirmedBy AS confirmedBy, r.source AS source
+            """;
+            params = Map.of(
+                    "incidentId", incidentId,
+                    "serviceId", input.rootCauseServiceId(),
+                    "deploymentId", input.triggeringDeploymentId(),
+                    "resId", resId,
+                    "title", input.title(),
+                    "remediationType", input.remediationType(),
+                    "actionTaken", input.actionTaken(),
+                    "confirmedAt", confirmedAt,
+                    "confirmedBy", input.confirmedBy()
+            );
+        } else {
+            cypher = """
+                MATCH (i:Incident {id: $incidentId})
+                MATCH (s:Service {id: $serviceId})
+                SET i.status = 'RESOLVED'
+                MERGE (r:Resolution {id: $resId})
+                ON CREATE SET r.title = $title,
+                              r.remediationType = $remediationType,
+                              r.actionTaken = $actionTaken,
+                              r.confirmedAt = $confirmedAt,
+                              r.confirmedBy = $confirmedBy,
+                              r.source = 'user-confirmed'
+                ON MATCH SET r.title = $title,
+                             r.remediationType = $remediationType,
+                             r.actionTaken = $actionTaken,
+                             r.confirmedAt = $confirmedAt,
+                             r.confirmedBy = $confirmedBy,
+                             r.source = 'user-confirmed'
+                MERGE (r)-[r1:RESOLVES]->(i)
+                ON CREATE SET r1.source = 'user-confirmed'
+                MERGE (r)-[r2:ADDRESSES]->(s)
+                ON CREATE SET r2.source = 'user-confirmed'
+                RETURN r.id AS id, r.title AS title, r.remediationType AS remediationType,
+                       r.actionTaken AS actionTaken, r.confirmedAt AS confirmedAt,
+                       r.confirmedBy AS confirmedBy, r.source AS source
+            """;
+            params = Map.of(
+                    "incidentId", incidentId,
+                    "serviceId", input.rootCauseServiceId(),
+                    "resId", resId,
+                    "title", input.title(),
+                    "remediationType", input.remediationType(),
+                    "actionTaken", input.actionTaken(),
+                    "confirmedAt", confirmedAt,
+                    "confirmedBy", input.confirmedBy()
+            );
+        }
+
+        ResultSet rs = graph.query(cypher, params);
+        Iterator<Record> it = rs.iterator();
+        if (!it.hasNext()) {
+            throw new IllegalStateException("Failed to atomically confirm resolution for incident: " + incidentId);
+        }
+        Record rec = it.next();
+        return new ResolutionRecord(
+                rec.getString("id"),
+                rec.getString("title"),
+                rec.getString("remediationType"),
+                rec.getString("actionTaken"),
+                ((Number) rec.getValue("confirmedAt")).longValue(),
+                rec.getString("confirmedBy"),
+                rec.getString("source")
+        );
     }
 
     private List<String> parseCommaSeparated(String raw) {

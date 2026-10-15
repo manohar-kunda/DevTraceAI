@@ -33,6 +33,7 @@ classDiagram
         int deployedAt
         string environment
         string deployedBy
+        string changeSummary
     }
 
     class ErrorSignature {
@@ -57,6 +58,7 @@ classDiagram
         string actionTaken
         int confirmedAt
         string confirmedBy
+        string source
     }
 
     Service "caller" --> "callee" Service : DEPENDS_ON
@@ -64,7 +66,8 @@ classDiagram
     Incident --> Service : AFFECTS
     Incident --> ErrorSignature : EXHIBITS
     Resolution --> Incident : RESOLVES
-    Resolution --> Service : APPLIES_TO
+    Resolution --> Service : ADDRESSES
+    Resolution ..> Deployment : TRIGGERED_BY
 ```
 
 ---
@@ -101,6 +104,7 @@ classDiagram
   - `deployedAt` (`int`): Fixed epoch-millisecond timestamp (e.g. `1792056600000` for 2026-10-15 09:30:00 UTC).
   - `environment` (`string`): Environment (e.g. `"production"`).
   - `deployedBy` (`string`): Engineer or CI/CD pipeline name.
+  - `changeSummary` (`string`): Human-readable summary of the changes deployed.
 - **Example Record**:
   ```cypher
   (:Deployment {
@@ -108,7 +112,8 @@ classDiagram
     version: "v2.4.1",
     deployedAt: 1792056600000,
     environment: "production",
-    deployedBy: "github-actions"
+    deployedBy: "github-actions",
+    changeSummary: "Decreased HikariCP maximumPoolSize from 50 to 10 and connectionTimeout to 2000ms on postgres-payments datasource"
   })
   ```
 - **Investigation Role**: Correlated against incident reporting time to infer candidate root causes.
@@ -117,16 +122,16 @@ classDiagram
 - **Meaning**: A normalized, clustered error fingerprint or classification.
 - **Required Properties**:
   - `id` (`string`, unique): Unique error signature ID (e.g. `"err-sig-payment-pool-timeout"`).
-  - `pattern` (`string`): Technical exception or error pattern (e.g. `"JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool"`).
+  - `pattern` (`string`): Technical exception or error pattern (e.g. `"HikariPool-1 / ConnectionTimeoutException: Connection is not available, request timed out after 30000ms"`).
   - `errorType` (`string`): Category (e.g. `"TIMEOUT"`, `"CONNECTION"`, `"AUTHENTICATION"`).
-  - `keywords` (`string`): Comma-separated tokens for deterministic text parsing (e.g. `"payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout"`).
+  - `keywords` (`string`): Comma-separated tokens for deterministic text parsing (e.g. `"payment timeout,payment timeouts,connection pool timeout,hikaripool timeout,pool timeout,pool exhausted,connection not available,hikari pool timeout"`).
 - **Example Record**:
   ```cypher
   (:ErrorSignature {
     id: "err-sig-payment-pool-timeout",
-    pattern: "JedisConnectionException / PoolTimeoutException: Could not get a resource from the pool",
+    pattern: "HikariPool-1 / ConnectionTimeoutException: Connection is not available, request timed out after 30000ms",
     errorType: "TIMEOUT",
-    keywords: "payment timeout,payment timeouts,connection pool timeout,jedis pool timeout,pool timeout,pool exhausted,read timeout"
+    keywords: "payment timeout,payment timeouts,connection pool timeout,hikaripool timeout,pool timeout,pool exhausted,connection not available,hikari pool timeout"
   })
   ```
 - **Investigation Role**: Connects new incidents to historical incidents with identical failure patterns.
@@ -136,7 +141,7 @@ classDiagram
 - **Required Properties**:
   - `id` (`string`, unique): Unique incident identifier (e.g. `"inc-2026-08-12-pay"`).
   - `title` (`string`): Summary description of the incident.
-  - `status` (`string`): Incident lifecycle status (`"OPEN"`, `"INVESTIGATING"`, `"RESOLVED"`).
+  - `status` (`string`): Incident lifecycle status (`"OPEN"`, `"RESOLVED"`). Rule: ONLY incidents with status `RESOLVED` and a confirmed `Resolution` are queried as historical evidence; `OPEN` incidents are strictly ignored.
   - `reportedAt` (`int`): Fixed epoch-millisecond timestamp when the incident began.
   - `severity` (`string`): Impact level (`"P1"`, `"P2"`, `"P3"`).
 - **Example Record**:
@@ -154,21 +159,23 @@ classDiagram
 ### E. `Resolution`
 - **Meaning**: A confirmed, human-verified remediation action that resolved an incident.
 - **Required Properties**:
-  - `id` (`string`, unique): Unique resolution ID (e.g. `"res-pay-timeout-fix"`).
+  - `id` (`string`, unique): Unique resolution ID (e.g. `"res-pay-timeout-fix"` or deterministic `"res-<incidentId>"`).
   - `title` (`string`): Short summary of the resolution.
   - `remediationType` (`string`): Categorization (`"ROLLBACK"`, `"CONFIG_CHANGE"`, `"RESTART"`, `"CAPACITY_INCREASE"`).
   - `actionTaken` (`string`): Detailed description of the verified corrective action.
   - `confirmedAt` (`int`): Fixed epoch-millisecond timestamp when verified (must be `> reportedAt`).
   - `confirmedBy` (`string`): Authorized engineer who marked the resolution confirmed.
+  - `source` (`string`): Provenance indicator (`"synthetic"` for seed data, `"user-confirmed"` for runtime write-backs).
 - **Example Record**:
   ```cypher
   (:Resolution {
     id: "res-pay-timeout-fix",
-    title: "Increase Jedis pool timeout and rollback connection limit",
+    title: "Increase HikariCP pool size and connection timeout",
     remediationType: "CONFIG_CHANGE",
-    actionTaken: "Increased Redis connection pool timeout from 2000ms to 10000ms and rolled back connection pool cap",
+    actionTaken: "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.",
     confirmedAt: 1786525200000,
-    confirmedBy: "sre-oncall"
+    confirmedBy: "sre-oncall",
+    source: "synthetic"
   })
   ```
 - **Investigation Role**: Surfaces actionable, evidence-backed fixes when a similar failure pattern is detected.
@@ -200,9 +207,13 @@ classDiagram
 - **Direction**: `(r:Resolution)-[:RESOLVES]->(i:Incident)`.
 - **Operational Meaning**: Confirmed resolution `r` successfully repaired incident `i`.
 
-### F. `(:Resolution)-[:APPLIES_TO]->(:Service)`
-- **Direction**: `(r:Resolution)-[:APPLIES_TO]->(s:Service)`.
-- **Operational Meaning**: Fix `r` was executed on service `s`.
+### F. `(:Resolution)-[:ADDRESSES]->(:Service)`
+- **Direction**: `(r:Resolution)-[:ADDRESSES]->(s:Service)`.
+- **Operational Meaning**: Fix `r` addressed the root cause on service `s`.
+
+### G. `(:Resolution)-[:TRIGGERED_BY]->(:Deployment)` (Optional)
+- **Direction**: `(r:Resolution)-[:TRIGGERED_BY]->(d:Deployment)`.
+- **Operational Meaning**: Fix `r` cited deployment `d` as the root trigger of the incident.
 
 ---
 

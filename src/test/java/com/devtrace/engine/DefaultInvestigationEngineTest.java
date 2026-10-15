@@ -82,7 +82,7 @@ class DefaultInvestigationEngineTest {
         DefaultInvestigationEngine engine = new DefaultInvestigationEngine(graphRepository, entryPointResolver, fixedClock);
         InvestigationReport report = engine.investigate(graph, request);
 
-        assertEquals("RESOLVED_HYPOTHESIS", report.status());
+        assertEquals("HYPOTHESES_RANKED", report.status());
 
         Map<String, CandidateHypothesis> byId = new HashMap<>();
         report.hypotheses().forEach(h -> byId.put(h.serviceId(), h));
@@ -90,7 +90,11 @@ class DefaultInvestigationEngineTest {
         assertEquals(RankingTier.STRONG, byId.get("svc-both").tier(), "svc-both must be STRONG (deployment + signature)");
         assertEquals(RankingTier.MODERATE, byId.get("svc-dep-only").tier(), "svc-dep-only must be MODERATE (deployment only)");
         assertEquals(RankingTier.MODERATE, byId.get("svc-sig-only").tier(), "svc-sig-only must be MODERATE (signature only)");
-        assertEquals(RankingTier.WEAK, byId.get("svc-weak").tier(), "svc-weak must be WEAK (neither)");
+
+        assertEquals(3, report.hypotheses().size(), "Only STRONG and MODERATE candidates are in hypotheses list");
+        assertEquals(2, report.otherServicesInNeighborhood().size(), "WEAK candidates (service-checkout and svc-weak) must be in otherServicesInNeighborhood");
+        assertTrue(report.otherServicesInNeighborhood().stream().anyMatch(n -> n.id().equals("svc-weak")));
+        assertTrue(report.otherServicesInNeighborhood().stream().anyMatch(n -> n.id().equals("service-checkout")));
     }
 
     @Test
@@ -175,8 +179,13 @@ class DefaultInvestigationEngineTest {
         DefaultInvestigationEngine engine = new DefaultInvestigationEngine(graphRepository, entryPointResolver, fixedClock);
         InvestigationReport report = engine.investigate(graph, request);
 
+        // When all candidates are WEAK, report status is INSUFFICIENT_EVIDENCE
+        // and all candidates are placed in otherServicesInNeighborhood
+        assertEquals("INSUFFICIENT_EVIDENCE", report.status());
+        assertTrue(report.hypotheses().isEmpty(), "No STRONG or MODERATE candidates");
+
         // Hops first: 0 hops (service-checkout), then 1 hop (svc-a before svc-b), then 2 hops (svc-c)
-        List<String> orderedIds = report.hypotheses().stream().map(CandidateHypothesis::serviceId).toList();
+        List<String> orderedIds = report.otherServicesInNeighborhood().stream().map(OtherServiceNode::id).toList();
         assertEquals("service-checkout", orderedIds.get(0));
         assertEquals("svc-a", orderedIds.get(1), "Alphanumeric tie-break: svc-a before svc-b at same hop distance");
         assertEquals("svc-b", orderedIds.get(2));

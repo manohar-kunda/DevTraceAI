@@ -205,3 +205,50 @@
   - *Rule-Based Tiers vs Weighted Scores*: Numeric confidence percentages provide an illusion of calibration. Discrete evidentiary tiers (`STRONG`, `MODERATE`, `WEAK`) give on-call engineers actionable explanations backed by verifiable graph evidence.
   - *Proximity as Tie-Break Only*: Topological distance is secondary to domain evidence. A service closer to the symptom with recent changes must not outrank a slightly farther service that exhibits the exact technical error signature.
   - *Zero-LLM Incident Analysis*: Core triage, ranking, dependency tracing, blast radius calculation, and resolution lookup execute entirely via deterministic Java algorithms and FalkorDB graph traversals, guaranteeing sub-second execution, zero hallucination, and full offline operation.
+
+## Checkpoint 8 — Resolution Write-Back, Incident Lifecycle & Knowledge Evolution
+- **Date / Time**: 2026-10-15
+- **Verified Status**: All 21 unit tests passed offline (`mvn test` in 10.27s); all 25 failsafe integration tests passed (`mvn verify` in 19.41s); total 46 tests passing with 0 failures, 0 errors. Live Act 4 knowledge evolution demo verified.
+- **What Was Done**:
+  - **A. Part 0 Fixes (Audited & Verified)**:
+    - 1. *Offline Test Safety*: Verified `mvn test` executes completely offline. Moved `HealthControllerTest` to `HealthControllerIT`; verified `mvn test` passed with FalkorDB stopped (0 failures, 0 errors).
+    - 2. *Status Neutrality*: Renamed report status `RESOLVED_HYPOTHESIS` -> `HYPOTHESES_RANKED` (and kept `INSUFFICIENT_EVIDENCE`). Nothing implies a cause is confirmed.
+    - 3. *Wording Audit*: Replaced certainty language across engine, models, and next steps ("confirms susceptibility" -> "the same service was affected by the same error signature in <incident>"; "Apply proven remediation" -> "Consider the previously confirmed remediation <id> (from a different incident)").
+    - 4. *Report Shape*: `hypotheses` partitioned to contain only `STRONG` and `MODERATE` candidates; `WEAK` candidates move to compact `otherServicesInNeighborhood: [ { id, name, hops } ]`; `hopDistance` is a direct field on `CandidateHypothesis`.
+    - 5. *Evidence Timing & changeSummary*: Evidence descriptions include human-readable ISO-8601 UTC time and `minutesBeforeIncident` alongside epoch millis; added `changeSummary` to all deployments in seed and projected in evidence.
+    - 6. *Story Coherence*: Failure chain aligned to PostgreSQL connection pool saturation (`HikariPool-1 / ConnectionTimeoutException: Connection is not available, request timed out after 30000ms`); deployment decreased `maximumPoolSize` from 50 to 10 on `postgres-payments`; resolution increased pool size back to 50; updated seed, docs, queries.
+    - 7. *Evidence Record Existence Integration Test*: Added explicit assertion in `InvestigationEngineIT` verifying that every evidence `recordId`, `ignoredChanges` ID, and `otherServicesInNeighborhood` ID exists as an actual node in FalkorDB.
+  - **B. FalkorDB Schema & Model Extensions**:
+    - Modeled `(Resolution)-[:ADDRESSES]->(Service)` (confirmed root cause service).
+    - Modeled `(Resolution)-[:TRIGGERED_BY]->(Deployment)` (optional cited triggering deployment).
+    - Extended `Resolution`: properties `source` ('synthetic' vs 'user-confirmed'), `confirmedBy`, `confirmedAt`, `actionTaken`, `remediationType`, `title`.
+    - Extended `Incident`: properties `id`, `title`, `status` ('OPEN' vs 'RESOLVED'), `reportedAt`, `severity`.
+    - Enforced strict evidence filter: ONLY incidents with status `RESOLVED` and a confirmed `Resolution` are queried as historical evidence; `OPEN` incidents are ignored.
+  - **C. Incident Tracking & ResolutionService**:
+    - Implemented `IncidentInput`, `IncidentRecord`, `ResolutionInput`, `ResolutionService`, and `DefaultResolutionService`.
+    - Created domain exceptions: `IncidentNotFoundException`, `IncidentAlreadyResolvedException`, `ServiceNotFoundException`, `DeploymentNotFoundException`, `InvalidResolutionInputException`, `ResolutionConflictException`.
+    - Validates incident exists and is `OPEN`.
+    - Validates `rootCauseServiceId` exists in FalkorDB. Unknown service IDs rejected with clear error.
+    - Validates non-blank summary/title, actionTaken, confirmedBy, length bounds.
+    - Validates optional triggering deployment exists if specified.
+    - `confirmedAt` strictly set by server from injected `Clock` (never accepted from client).
+    - Idempotency: deterministic resolution ID (`res-<incidentId>`). Confirming twice with identical payload is an idempotent no-op; confirming with differing payload throws `ResolutionConflictException`.
+    - Atomic Cypher update: incident becomes `RESOLVED`, resolution node created with `source: 'user-confirmed'`, edges `[:RESOLVES]`, `[:ADDRESSES]`, optional `[:TRIGGERED_BY]` created in single statement. Safe to retry.
+    - Engine suggestions are NEVER persisted as resolutions. Only user confirmation via this service creates resolution nodes.
+  - **D. Knowledge Evolution & Reuse**:
+    - Updated `findSimilarIncidents` query to traverse `(r:Resolution)-[:ADDRESSES]->(s:Service)` and require `i.status = 'RESOLVED'`.
+    - Exposes full provenance (`source`, `confirmedBy`, `confirmedAt`) in `ResolutionRecord`.
+  - **E. Integration Tests (`ResolutionWriteBackIT`)**:
+    - Act 4 before/after: Investigates before write-back (OPEN incident excluded, only 1 historical incident) -> Confirms resolution via `ResolutionService` -> Investigates with same signature -> Verifies report contains BOTH seeded incident and user-confirmed incident with full provenance.
+    - Side-by-side JSON comparison printed to test output.
+    - Verified OPEN incident is never returned as historical evidence.
+    - Verified validation errors (unknown service, blank summary, unknown deployment).
+    - Verified idempotency (repeat identical succeeds, conflict throws).
+    - Verified dev graph reset restores exact seed node counts (24 nodes, 26 relationships).
+  - **F. Documentation Updates**:
+    - Updated `docs/GOLDEN_SCENARIO.md`, `docs/QUERIES.md`, `docs/GRAPH_MODEL.md`, `docs/PROGRESS.md`.
+- **Key Design Decisions**:
+  - *Human-in-the-Loop Write-Back Guardrail*: Engine hypotheses and suggestions are strictly read-only diagnostics; they are never persisted as resolutions. Only authenticated human confirmation via `ResolutionService` writes back knowledge to FalkorDB.
+  - *Server-Controlled Provenance & Clock Isolation*: Timestamps (`confirmedAt`) and provenance (`source: 'user-confirmed'`) are minted exclusively by the server using an injected `Clock`, preventing client clock skew, tampering, or backdated entries from corrupting historical analysis.
+  - *Atomic Single-Statement Write-Back*: The incident status transition (`status: 'RESOLVED'`), resolution node creation, and relationship joins (`[:RESOLVES]`, `[:ADDRESSES]`, `[:TRIGGERED_BY]`) occur in a single atomic Cypher MERGE/SET statement, ensuring no partially-applied states or orphan resolutions can exist in FalkorDB.
+

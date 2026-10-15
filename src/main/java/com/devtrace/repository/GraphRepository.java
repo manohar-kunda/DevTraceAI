@@ -56,13 +56,12 @@ public interface GraphRepository {
 
     /**
      * Finds historical incidents via deterministic structured graph matching.
-     * Matching requires: (1) same ErrorSignature, (2) same affected service, (3) service inside candidate neighborhood.
-     * Wording similarity is strictly forbidden.
+     * Traverses (r:Resolution)-[:ADDRESSES]->(s:Service) and requires i.status = 'RESOLVED'.
      *
      * @param graphName          Target graph.
      * @param errorSignatureId   ErrorSignature ID matched from entry points.
      * @param candidateServiceIds Candidate service IDs in the topological neighborhood.
-     * @return List of SimilarIncidentRecord instances including confirmed resolutions if present.
+     * @return List of SimilarIncidentRecord instances with confirmed resolutions and provenance.
      */
     List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds);
 
@@ -95,4 +94,35 @@ public interface GraphRepository {
      * @return true if an entity with this ID exists.
      */
     boolean recordExists(String graphName, String recordId);
+
+    /**
+     * Checks if a Service node exists with the given ID.
+     */
+    boolean serviceExists(String graphName, String serviceId);
+
+    /**
+     * Checks if a Deployment node exists with the given ID.
+     */
+    boolean deploymentExists(String graphName, String deploymentId);
+
+    /**
+     * Finds an Incident node by its ID.
+     */
+    Optional<IncidentRecord> findIncidentById(String graphName, String incidentId);
+
+    /**
+     * Creates or idempotently ensures an Incident node exists in FalkorDB.
+     */
+    IncidentRecord createOrEnsureIncident(String graphName, IncidentInput input);
+
+    /**
+     * Finds a confirmed Resolution linked to the given Incident ID.
+     */
+    Optional<ResolutionRecord> findResolutionByIncidentId(String graphName, String incidentId);
+
+    /**
+     * Atomically marks an incident as RESOLVED and creates a Resolution node with source 'user-confirmed',
+     * linking [:RESOLVES] to the incident, [:ADDRESSES] to rootCauseService, and optional [:TRIGGERED_BY] to deployment.
+     */
+    ResolutionRecord confirmResolution(String graphName, String incidentId, ResolutionInput input, long confirmedAt);
 }
