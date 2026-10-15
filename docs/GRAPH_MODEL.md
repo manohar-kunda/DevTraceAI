@@ -24,6 +24,7 @@ classDiagram
         string team
         string[] aliases
         int criticalTier
+        string serviceType
     }
 
     class Deployment {
@@ -73,19 +74,21 @@ classDiagram
 ### A. `Service`
 - **Meaning**: A discrete microservice, backend component, or infrastructure service (e.g. database, cache) within the topology.
 - **Required Properties**:
-  - `id` (`string`, unique): Unique identifier (e.g. `"service-payment"`).
-  - `name` (`string`): Display name (e.g. `"PaymentService"`).
+  - `id` (`string`, unique): Unique identifier prefixed with `service-` (e.g. `"service-payment"`).
+  - `name` (`string`): Display name (e.g. `"payment-service"`).
   - `team` (`string`): Engineering team owning the service (e.g. `"Payments Core"`).
-  - `aliases` (`string`): Comma-separated alias keywords used for deterministic free-text matching (e.g. `"payment,payments,checkout-payment,gateway"`).
+  - `aliases` (`string`): Comma-separated alias keywords used for deterministic free-text matching (e.g. `"payment-service,payment,payments,checkout-payment,payment-gateway"`).
   - `criticalTier` (`int`): Tier level (`1` for mission-critical customer-facing, `2` for internal, `3` for async).
+  - `serviceType` (`string`): Type categorization (`"MICROSERVICE"`, `"DATABASE"`, `"CACHE"`).
 - **Example Record**:
   ```cypher
   (:Service {
     id: "service-payment",
-    name: "PaymentService",
+    name: "payment-service",
     team: "Payments Core",
-    aliases: "payment,payments,checkout-payment,payment-gateway",
-    criticalTier: 1
+    aliases: "payment-service,payment,payments,checkout-payment,payment-gateway",
+    criticalTier: 1,
+    serviceType: "MICROSERVICE"
   })
   ```
 - **Investigation Role**: Serves as the topological anchor for dependency traversal, blast-radius queries, and change detection.
@@ -116,14 +119,14 @@ classDiagram
   - `id` (`string`, unique): Unique error signature ID (e.g. `"err-sig-gateway-timeout"`).
   - `pattern` (`string`): Error message pattern or exception class (e.g. `"HTTP 504 / GatewayTimeoutException"`).
   - `errorType` (`string`): Category (e.g. `"TIMEOUT"`, `"CONNECTION"`, `"AUTHENTICATION"`).
-  - `keywords` (`string`): Comma-separated tokens for deterministic text parsing (e.g. `"timeout,timed out,504,gateway timeout,connection timeout"`).
+  - `keywords` (`string`): Comma-separated tokens for deterministic text parsing (e.g. `"504,gateway timeout,payment timeout,upstream timeout,read timeout,http 504"`).
 - **Example Record**:
   ```cypher
   (:ErrorSignature {
     id: "err-sig-gateway-timeout",
     pattern: "HTTP 504 Gateway Timeout",
     errorType: "TIMEOUT",
-    keywords: "timeout,timed out,504,gateway timeout,read timeout"
+    keywords: "504,gateway timeout,payment timeout,upstream timeout,read timeout,http 504"
   })
   ```
 - **Investigation Role**: Connects new incidents to historical incidents with identical failure patterns.
@@ -155,7 +158,7 @@ classDiagram
   - `title` (`string`): Short summary of the resolution.
   - `remediationType` (`string`): Categorization (`"ROLLBACK"`, `"CONFIG_CHANGE"`, `"RESTART"`, `"CAPACITY_INCREASE"`).
   - `actionTaken` (`string`): Detailed description of the verified corrective action.
-  - `confirmedAt` (`int`): Fixed epoch-millisecond timestamp when verified.
+  - `confirmedAt` (`int`): Fixed epoch-millisecond timestamp when verified (must be `> reportedAt`).
   - `confirmedBy` (`string`): Authorized engineer who marked the resolution confirmed.
 - **Example Record**:
   ```cypher
@@ -178,7 +181,7 @@ classDiagram
 - **Unambiguous Direction**: `(A:Service)-[:DEPENDS_ON]->(B:Service)` means **Service A calls Service B** (Service A depends on Service B).
 - **Operational Meaning**: A degradation or outage in Service B propagates upstream to Service A.
 - **Blast Radius Direction**: To find the blast radius of a failing service `B`, we traverse **incoming** edges (`(dependents:Service)-[:DEPENDS_ON*1..4]->(B)`).
-- **Example**: `(:Service {name: 'CheckoutService'})-[:DEPENDS_ON]->(:Service {name: 'PaymentService'})`.
+- **Example**: `(:Service {id: 'service-checkout'})-[:DEPENDS_ON]->(:Service {id: 'service-payment'})`.
 
 ### B. `(:Deployment)-[:DEPLOYED_TO]->(:Service)`
 - **Direction**: `(d:Deployment)-[:DEPLOYED_TO]->(s:Service)`.
@@ -214,21 +217,31 @@ classDiagram
 
 ---
 
-## 6. Deterministic Free-Text Mapping & Honest Limitations
+## 6. Deterministic Free-Text Mapping & Disambiguation Rules
 
 ### How Free-Text Becomes Graph Entry Points
 DevTrace AI parses user descriptions deterministically without requiring an LLM:
 1. **Service Extraction**: Tokenizes the input text and matches tokens against `Service.aliases` and `Service.name` using case-insensitive substring matching.
-2. **Error Signature Extraction**: Matches text tokens against `ErrorSignature.keywords` (e.g. `"timeout"`, `"connection reset"`).
-3. **Optional Structured Hints**: The API request accepts optional fields (`serviceHint`, `errorHint`, `incidentTimestamp`) to bypass text ambiguity when automated monitoring alerts submit incidents.
-
-### Honest Limitations
-- **Vocabulary Gap**: If a user submits metaphorical text like *"the green submit button is frozen"*, deterministic matching cannot infer that this pertains to `service-checkout` unless `"green submit button"` was pre-configured in aliases.
-- **Ambiguity**: If multiple services share a keyword, structured hints or interactive user clarification must disambiguate. The system explicitly reports `"INSUFFICIENT_EVIDENCE"` rather than fabricating an unsubstantiated guess.
+2. **Error Signature Extraction**: Matches text tokens against `ErrorSignature.keywords` (e.g. `"504"`, `"gateway timeout"`, `"payment timeout"`).
+3. **Deterministic Tie-Break Rules**:
+   - **Rule 1 (Longest Phrase Match)**: Multi-word phrase matches (e.g. `"payment timeout"` - 2 words) take strict precedence over single-word matches (e.g. `"timeout"` - 1 word).
+   - **Rule 2 (Topological Neighborhood Scoping)**: If keyword ambiguity persists between multiple signatures (e.g. `err-sig-gateway-timeout` vs `err-sig-jwt-expired`), candidate signatures are scored by whether the services historically affected by that signature (`(:Incident)-[:EXHIBITS]->(sig)` with `(:Incident)-[:AFFECTS]->(srv)`) lie within the reachable call chain (`(symptom)-[:DEPENDS_ON*0..3]->(srv)`). Services outside the reachability neighborhood are rejected.
+   - **Rule 3 (Structured Alert Override)**: Optional structured fields (`serviceHint`, `errorHint`, `incidentTimestamp`) bypass text extraction entirely when automated alerts trigger the investigation.
+4. **Honest Limitations & Refusal Criteria**:
+   - If no service or error signature can be resolved with high confidence, the system returns `"INSUFFICIENT_EVIDENCE"` rather than guessing.
 
 ---
 
-## 7. Data Integrity, Indexing & Idempotency Rules
+## 7. FalkorDB Algorithm Insights & PageRank Directionality
+
+### PageRank Directionality on `DEPENDS_ON`
+- In DevTrace AI, dependency edges are directed from caller to callee: `(caller:Service)-[:DEPENDS_ON]->(callee:Service)`.
+- Running `CALL algo.pageRank('Service', 'DEPENDS_ON')` interprets outbound edges as citations/votes. Consequently, deeply nested shared callees (such as `payment-service` and databases) accumulate inbound edges and receive higher PageRank scores.
+- **Architectural Decision**: PageRank measures static *architectural criticality* (how many upstream services depend on a hub). However, for runtime root-cause diagnosis, static hub centrality does not imply failure. Therefore, PageRank is **deferred from the core MVP ranking formula** to keep candidate cause ranking deterministic, explainable, and free of uncalibrated heuristics.
+
+---
+
+## 8. Data Integrity, Indexing & Idempotency Rules
 
 FalkorDB capability probe verified the following constraints:
 1. **Exact-Match Index Required First**: Unique constraints in FalkorDB require a supporting index:
@@ -239,7 +252,7 @@ FalkorDB capability probe verified the following constraints:
    CREATE INDEX FOR (i:Incident) ON (i.id);
    CREATE INDEX FOR (r:Resolution) ON (r.id);
    ```
-2. **Dedicated Constraint Command**:
+2. **Dedicated Constraint Command via Redis**:
    ```redis
    GRAPH.CONSTRAINT CREATE devtrace UNIQUE NODE Service PROPERTIES 1 id
    GRAPH.CONSTRAINT CREATE devtrace UNIQUE NODE Deployment PROPERTIES 1 id
@@ -248,3 +261,4 @@ FalkorDB capability probe verified the following constraints:
    GRAPH.CONSTRAINT CREATE devtrace UNIQUE NODE Resolution PROPERTIES 1 id
    ```
 3. **Idempotent Seed Writes**: All seed queries use `MERGE` with `ON CREATE SET` and `ON MATCH SET`. Re-running the seed script never duplicates nodes or relationships.
+

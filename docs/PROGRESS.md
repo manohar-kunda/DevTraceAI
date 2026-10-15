@@ -95,9 +95,39 @@
     - Established 5-act demonstration script with 9 synthetic services and a 4-hop chain (`api-gateway` to `postgres-payments`).
     - Defined distractor deployments and past incidents demonstrating structured matching superiority.
     - Specified expected ranked candidate causes, blast radius boundaries, insufficient evidence handling, resolution write-back evolution, and the graph-removal benchmark.
+## Checkpoint 5 — Idempotent Seed Implementation and Graph Verification
+- **Date / Time**: 2026-10-15
+- **Verified Status**: Schema constraints operational, idempotent seeding verified on `devtrace_test` (6/6 ITs passed), `devtrace` seeded, unit/integration tests strictly separated (`mvn test` vs `mvn verify`).
+- **What Was Done**:
+  - **Part 0 (Design Self-Audit)**:
+    - Re-audited `docs/GRAPH_MODEL.md` and `docs/GOLDEN_SCENARIO.md`. Standardized all service node IDs with `service-` prefix (`service-gateway`, `service-auth`, `service-checkout`, `service-order`, `service-inventory`, `service-payment`, `service-notification`, `service-postgres-orders`, `service-postgres-payments`, `service-redis-cache`).
+    - Added `serviceType` property (`"MICROSERVICE"`, `"DATABASE"`, `"CACHE"`) to differentiate microservices from infrastructure nodes.
+    - Verified chronological sanity: all deployments precede incident timestamps, and all resolution `confirmedAt` timestamps are subsequent to incident `reportedAt`.
+    - Documented deterministic free-text keyword tie-break rules: longest multi-word token precedence (e.g. `"payment timeout"` over `"timeout"`), topological reachability scoping (discarding signatures on services outside the call chain), and structured hint overrides.
+    - Hardened distractors: added `dep-inventory-v1.5.0` on `service-inventory` ($T - 10\text{ min}$, 1 hop from checkout, zero error signature match). Proved that topology + recency alone would rank inventory higher, while DevTrace AI's multi-factor formula correctly ranks `payment-service` #1 due to error signature affinity.
+    - Verified Act 2 blast radius ground truth on `devtrace_test` using Cypher: confirmed incoming callers (`service-order` 1 hop, `service-checkout` 2 hops, `service-gateway` 3 hops) and verified exclusion of callees (`postgres-payments`, `redis-cache`) and unrelated branches.
+    - Documented PageRank directionality on caller-callee edges and confirmed deferral from the MVP candidate ranking formula to prevent uncalibrated heuristics.
+  - **Part A (Seed Implementation & Schema Bootstrap)**:
+    - Removed temporary test class `FalkorConnectionTest.java`.
+    - Created classpath resource `src/main/resources/seed/devtrace-golden-scenario.cypher` containing 50 idempotent Cypher statements (`MERGE ... ON CREATE SET ... ON MATCH SET ...`) with `source: 'synthetic'`.
+    - Implemented `FalkorSchemaBootstrap`: creates supporting exact-match indexes, issues `GRAPH.CONSTRAINT CREATE <graph> UNIQUE NODE <label> PROPERTIES 1 id` via Jedis `sendCommand`, and polls `CALL db.constraints()` until all 5 unique constraints are operational.
+    - Implemented `FalkorSeedService`: reads and parses statements from classpath, enforces safety whitelist (`devtrace`, `devtrace_test`) before any graph deletion, executes statements, and returns structured `SeedResult`.
+    - Configured `devtrace.seed.enabled` and `devtrace.seed.reset` in `application.properties` and `.env.example`.
+  - **Part B (Test Separation & Live Seeding)**:
+    - Added `maven-failsafe-plugin` to `pom.xml`. `mvn test` executes only pure unit tests (`*Test.java`) ensuring builds do not fail if Docker is down. `mvn verify` executes integration tests (`*IT.java`).
+    - Created `FalkorSeedIntegrationIT` executing against isolated graph `devtrace_test`:
+      1. Initial seed creates exactly 24 nodes and 26 relationships.
+      2. Seed idempotency: second execution produces zero duplicates.
+      3. `ON MATCH SET` restores modified node properties.
+      4. Unique constraint rejects duplicate node ID insertion with constraint violation error.
+      5. Act 2 blast radius matches ground truth incoming callers and excludes non-callers.
+      6. Reset safety check throws `IllegalArgumentException` on non-whitelisted graphs.
+    - Queried `devtrace` graph and confirmed it held only the 2 old test nodes (`OrderService`, `PaymentService`).
+    - Seeded `devtrace` with the golden scenario dataset (529ms). Verified live state via Cypher: 24 nodes, 26 relationships, 5 operational constraints.
 - **Key Design Decisions**:
-  - Keep team ownership as a property on `Service` rather than a separate node, keeping query execution fast without multi-hop overhead.
-  - Rely on FalkorDB's native `algo.pageRank` and `algo.betweenness` procedures for explainable graph topology analysis.
+  - Whitelist-guarded reset: `ALLOWED_RESET_GRAPHS = {"devtrace", "devtrace_test"}` ensures production graphs can never be accidentally dropped.
+  - Strict separation of test lifecycles (`mvn test` vs `mvn verify` via Failsafe) keeps standard build pipelines reliable even when database containers are not running.
+
 
 
 
