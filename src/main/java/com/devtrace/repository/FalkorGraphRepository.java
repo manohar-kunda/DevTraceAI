@@ -413,7 +413,13 @@ public class FalkorGraphRepository implements GraphRepository {
         if (incidentId == null || incidentId.isBlank()) return Optional.empty();
         Graph graph = driver.graph(graphName);
         ResultSet rs = graph.readOnlyQuery(
-                "MATCH (i:Incident {id: $incidentId}) RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity",
+                """
+                MATCH (i:Incident {id: $incidentId})
+                OPTIONAL MATCH (i)-[:AFFECTS]->(s:Service)
+                OPTIONAL MATCH (i)-[:EXHIBITS]->(e:ErrorSignature)
+                RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity,
+                       s.id AS symptomServiceId, e.id AS errorSignatureId
+                """,
                 Map.of("incidentId", incidentId)
         );
         Iterator<Record> it = rs.iterator();
@@ -424,7 +430,9 @@ public class FalkorGraphRepository implements GraphRepository {
                     rec.getString("title"),
                     rec.getString("status"),
                     ((Number) rec.getValue("reportedAt")).longValue(),
-                    rec.getString("severity")
+                    rec.getString("severity"),
+                    rec.getString("symptomServiceId"),
+                    rec.getString("errorSignatureId")
             ));
         }
         return Optional.empty();
@@ -458,29 +466,54 @@ public class FalkorGraphRepository implements GraphRepository {
             throw new IllegalStateException("Failed to create or ensure incident node for ID: " + input.id());
         }
         Record rec = it.next();
-        IncidentRecord created = new IncidentRecord(
+
+        String resolvedServiceId = null;
+        if (input.symptomServiceId() != null && !input.symptomServiceId().isBlank()) {
+            ResultSet sRs = graph.query(
+                    """
+                    MATCH (i:Incident {id: $id}), (s:Service)
+                    WHERE s.id = $sId OR s.name = $sId OR s.aliases CONTAINS $sId
+                    MERGE (i)-[r:AFFECTS]->(s)
+                    ON CREATE SET r.source = 'runtime'
+                    RETURN s.id AS resolvedServiceId
+                    LIMIT 1
+                    """,
+                    Map.of("id", input.id(), "sId", input.symptomServiceId())
+            );
+            Iterator<Record> sIt = sRs.iterator();
+            if (sIt.hasNext()) {
+                resolvedServiceId = sIt.next().getString("resolvedServiceId");
+            }
+        }
+
+        String resolvedErrorSigId = null;
+        if (input.errorSignatureId() != null && !input.errorSignatureId().isBlank()) {
+            ResultSet eRs = graph.query(
+                    """
+                    MATCH (i:Incident {id: $id}), (e:ErrorSignature)
+                    WHERE e.id = $eId OR e.errorType = $eId OR e.pattern CONTAINS $eId
+                    MERGE (i)-[r:EXHIBITS]->(e)
+                    ON CREATE SET r.source = 'runtime'
+                    RETURN e.id AS resolvedErrorSigId
+                    LIMIT 1
+                    """,
+                    Map.of("id", input.id(), "eId", input.errorSignatureId())
+            );
+            Iterator<Record> eIt = eRs.iterator();
+            if (eIt.hasNext()) {
+                resolvedErrorSigId = eIt.next().getString("resolvedErrorSigId");
+            }
+        }
+
+        return new IncidentRecord(
                 rec.getString("id"),
                 rec.getString("title"),
                 rec.getString("status"),
                 ((Number) rec.getValue("reportedAt")).longValue(),
-                rec.getString("severity")
+                rec.getString("severity"),
+                resolvedServiceId != null ? resolvedServiceId : input.symptomServiceId(),
+                resolvedErrorSigId != null ? resolvedErrorSigId : input.errorSignatureId()
         );
-
-        if (input.symptomServiceId() != null && !input.symptomServiceId().isBlank()) {
-            graph.query(
-                    "MATCH (i:Incident {id: $id}), (s:Service {id: $sId}) MERGE (i)-[r:AFFECTS]->(s) ON CREATE SET r.source = 'runtime'",
-                    Map.of("id", input.id(), "sId", input.symptomServiceId())
-            );
-        }
-
-        if (input.errorSignatureId() != null && !input.errorSignatureId().isBlank()) {
-            graph.query(
-                    "MATCH (i:Incident {id: $id}), (e:ErrorSignature {id: $eId}) MERGE (i)-[r:EXHIBITS]->(e) ON CREATE SET r.source = 'runtime'",
-                    Map.of("id", input.id(), "eId", input.errorSignatureId())
-            );
-        }
-
-        return created;
     }
 
     @Override

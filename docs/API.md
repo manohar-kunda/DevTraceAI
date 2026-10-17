@@ -145,7 +145,7 @@ curl.exe -s -X POST http://localhost:8085/api/incidents/inc-2026-10-15-checkout-
 ```cmd
 curl.exe -s -X POST http://localhost:8085/api/incidents/inc-2026-10-15-checkout-001/resolution \
   -H "Content-Type: application/json" \
-  -H "X-DevTrace-Token: devtrace-local-token-2026" \
+  -H "X-DevTrace-Token: <redacted>" \
   --data-binary @docs/examples/confirm-resolution.json
 ```
 

@@ -119,13 +119,13 @@ public class DefaultIncidentService implements IncidentService {
                 ? overrideRequest.description()
                 : incident.title();
 
-        String serviceHint = (overrideRequest != null && overrideRequest.serviceHint() != null)
+        String serviceHint = (overrideRequest != null && overrideRequest.serviceHint() != null && !overrideRequest.serviceHint().isBlank())
                 ? overrideRequest.serviceHint()
-                : null;
+                : incident.symptomServiceId();
 
-        String errorHint = (overrideRequest != null && overrideRequest.errorHint() != null)
+        String errorHint = (overrideRequest != null && overrideRequest.errorHint() != null && !overrideRequest.errorHint().isBlank())
                 ? overrideRequest.errorHint()
-                : null;
+                : incident.errorSignatureId();
 
         Long startedAt = (overrideRequest != null && overrideRequest.startedAt() != null && overrideRequest.startedAt() > 0)
                 ? overrideRequest.startedAt()
