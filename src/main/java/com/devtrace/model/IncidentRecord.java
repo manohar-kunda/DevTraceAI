@@ -10,9 +10,15 @@ public record IncidentRecord(
         long reportedAt,
         String severity, // "P1", "P2", "P3", etc.
         String symptomServiceId,
-        String errorSignatureId
+        String errorSignatureId,
+        String serviceHint,
+        String errorHint
 ) {
+    public IncidentRecord(String id, String title, String status, long reportedAt, String severity, String symptomServiceId, String errorSignatureId) {
+        this(id, title, status, reportedAt, severity, symptomServiceId, errorSignatureId, null, null);
+    }
+
     public IncidentRecord(String id, String title, String status, long reportedAt, String severity) {
-        this(id, title, status, reportedAt, severity, null, null);
+        this(id, title, status, reportedAt, severity, null, null, null, null);
     }
 }

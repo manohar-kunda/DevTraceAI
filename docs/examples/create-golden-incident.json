@@ -1,0 +1,5 @@
+{
+  "description": "Checkout requests are failing after the latest deployment and payment timeouts have increased",
+  "startedAt": 1792058400000,
+  "incidentId": "inc-2026-10-15-checkout-001"
+}

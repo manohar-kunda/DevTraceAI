@@ -349,10 +349,29 @@
     - Authored `docs/DEMO_SCRIPT.md` (3.5-minute video recording walkthrough).
     - Authored `docs/SUBMISSION_CHECKLIST.md` mapping hackathon requirements to files.
     - Authored `docs/BLOG_OUTLINE.md` highlighting real engineering lessons learned.
-    - Tested fresh clone into a temporary directory: verified `mvn compile`, `docker compose config`, `npm ci`, and `npm run build` all pass on a clean environment.
-- **Key Design Decisions**:
-  - *Zero-Guess Free-Text Persistence*: When incidents arrive without pre-tagged infrastructure hints, the graph dynamically links the incident to its derived symptom and error signature nodes, maintaining graph consistency across subsequent investigative queries.
-  - *Resilient Degraded-State Reporting*: When downstream infrastructure fails, the API gracefully emits standard RFC 7807 problem details with zero stack-trace leakage, ensuring robust production ergonomics for automated on-call clients.
+## Checkpoint 12 — Investigation Read-Only Invariant, Strict Entry-Point Derivation, 503 Error Sanitization & XML Test Audit
+- **Date / Time**: 2026-10-18
+- **Verified Status**: All 40 Surefire unit tests and all 32 Failsafe integration tests pass (`mvn clean verify`, total 72 tests, 0 failures, 0 errors). Investigation verified as strictly read-only (zero mutations across consecutive calls). Incident creation derives and persists entry point edges. 503 ProblemDetail sanitized with server-side correlation ID logging. Dev graph reset to 24 nodes, 26 rels. Git hygiene confirmed with 0 secrets in tracked files.
+- **What Was Done**:
+  - **A. Test Suite Inventory & Coverage Restoration**:
+    - Renamed `DevTraceApplicationTests.java` to `DevTraceApplicationIT.java` under `src/test/java/com/devtrace/` so Spring context load (`contextLoads()`) runs reliably during `mvn verify` without breaking offline `mvn test`.
+    - Added unit test `testGoldenSentenceResolvesCheckoutAndPaymentPoolTimeout` in `com.devtrace.resolver.DefaultEntryPointResolverTest` asserting exact golden sentence resolution (`service-checkout`, `err-sig-payment-pool-timeout`, `FREE_TEXT_KEYWORD`).
+    - Added integration test `testInvestigationIsStrictlyReadOnly` in `com.devtrace.controller.IncidentControllerIT` asserting graph node and relationship counts are identical before and after multiple investigation calls.
+    - Verified test methods directly by parsing Surefire and Failsafe XML report files (`TEST-*.xml`): 40 unit test methods across 4 classes, 32 integration test methods across 7 classes.
+  - **B. Read-Only Investigation Invariant**:
+    - Modified `DefaultIncidentService.java`: `createIncident` now resolves and persists `[:AFFECTS]` and `[:EXHIBITS]` edges upon incident creation.
+    - `investigateIncident` in `DefaultIncidentService.java` is strictly read-only: stripped out `linkIncidentRelationships` calls so investigative queries never mutate the graph.
+  - **C. Golden Demo Payload & Free-Text Resolution**:
+    - Verified `GET /api/demo/golden-incident` returns exact golden sentence with `startedAt: 1792058400000`, `demo: true`, and null hints.
+    - Verified that posting this incident resolves symptom `service-checkout` and error `err-sig-payment-pool-timeout`.
+    - Verified ranked hypotheses: `service-payment` at STRONG rank 1, `service-inventory` at MODERATE rank 2, with deployment evidence.
+  - **D. 503 Error Body Sanitization**:
+    - Replaced raw exception string in `GlobalExceptionHandler.java` with fixed sanitized message: `"Database service is temporarily unavailable. Please verify FalkorDB is running and accessible."`.
+    - Logged original exception and correlation ID on server only.
+  - **E. Secrets Verification & Graph Reset**:
+    - Scanned all tracked files in git for token and password values from `.env`; confirmed 0 occurrences.
+    - Reset `devtrace` graph: verified 24 nodes, 26 relationships, 0 user-confirmed resolutions.
+
 
 
 

@@ -418,13 +418,16 @@ public class FalkorGraphRepository implements GraphRepository {
                 OPTIONAL MATCH (i)-[:AFFECTS]->(s:Service)
                 OPTIONAL MATCH (i)-[:EXHIBITS]->(e:ErrorSignature)
                 RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity,
-                       s.id AS symptomServiceId, e.id AS errorSignatureId
+                       s.id AS symptomServiceId, e.id AS errorSignatureId,
+                       i.serviceHint AS serviceHint, i.errorHint AS errorHint
                 """,
                 Map.of("incidentId", incidentId)
         );
         Iterator<Record> it = rs.iterator();
         if (it.hasNext()) {
             Record rec = it.next();
+            String sHint = rec.getString("serviceHint");
+            String eHint = rec.getString("errorHint");
             return Optional.of(new IncidentRecord(
                     rec.getString("id"),
                     rec.getString("title"),
@@ -432,7 +435,9 @@ public class FalkorGraphRepository implements GraphRepository {
                     ((Number) rec.getValue("reportedAt")).longValue(),
                     rec.getString("severity"),
                     rec.getString("symptomServiceId"),
-                    rec.getString("errorSignatureId")
+                    rec.getString("errorSignatureId"),
+                    sHint != null && !sHint.isBlank() ? sHint : null,
+                    eHint != null && !eHint.isBlank() ? eHint : null
             ));
         }
         return Optional.empty();
@@ -447,18 +452,20 @@ public class FalkorGraphRepository implements GraphRepository {
 
         String cypher = """
             MERGE (i:Incident {id: $id})
-            ON CREATE SET i.title = $title, i.status = $status, i.reportedAt = $reportedAt, i.severity = $severity, i.source = 'runtime'
+            ON CREATE SET i.title = $title, i.status = $status, i.reportedAt = $reportedAt, i.severity = $severity, i.source = 'runtime',
+                          i.serviceHint = $serviceHint, i.errorHint = $errorHint
             ON MATCH SET i.title = $title, i.severity = $severity
             RETURN i.id AS id, i.title AS title, i.status AS status, i.reportedAt AS reportedAt, i.severity AS severity
         """;
 
-        Map<String, Object> params = Map.of(
-                "id", input.id(),
-                "title", input.title(),
-                "status", status,
-                "reportedAt", input.reportedAt(),
-                "severity", input.severity()
-        );
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", input.id());
+        params.put("title", input.title());
+        params.put("status", status);
+        params.put("reportedAt", input.reportedAt());
+        params.put("severity", input.severity());
+        params.put("serviceHint", input.serviceHint() != null ? input.serviceHint() : "");
+        params.put("errorHint", input.errorHint() != null ? input.errorHint() : "");
 
         ResultSet rs = graph.query(cypher, params);
         Iterator<Record> it = rs.iterator();
@@ -512,7 +519,9 @@ public class FalkorGraphRepository implements GraphRepository {
                 ((Number) rec.getValue("reportedAt")).longValue(),
                 rec.getString("severity"),
                 resolvedServiceId != null ? resolvedServiceId : input.symptomServiceId(),
-                resolvedErrorSigId != null ? resolvedErrorSigId : input.errorSignatureId()
+                resolvedErrorSigId != null ? resolvedErrorSigId : input.errorSignatureId(),
+                input.serviceHint(),
+                input.errorHint()
         );
     }
 

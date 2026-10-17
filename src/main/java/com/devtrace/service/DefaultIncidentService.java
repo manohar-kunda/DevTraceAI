@@ -5,6 +5,7 @@ import com.devtrace.engine.InvestigationEngine;
 import com.devtrace.exception.*;
 import com.devtrace.model.*;
 import com.devtrace.repository.GraphRepository;
+import com.devtrace.resolver.EntryPointResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +18,7 @@ public class DefaultIncidentService implements IncidentService {
     private final GraphRepository graphRepository;
     private final InvestigationEngine investigationEngine;
     private final ResolutionService resolutionService;
+    private final EntryPointResolver entryPointResolver;
     private final Clock clock;
 
     @Autowired
@@ -24,11 +26,13 @@ public class DefaultIncidentService implements IncidentService {
             GraphRepository graphRepository,
             InvestigationEngine investigationEngine,
             ResolutionService resolutionService,
+            EntryPointResolver entryPointResolver,
             @Autowired(required = false) Clock clock
     ) {
         this.graphRepository = Objects.requireNonNull(graphRepository, "graphRepository cannot be null");
         this.investigationEngine = Objects.requireNonNull(investigationEngine, "investigationEngine cannot be null");
         this.resolutionService = Objects.requireNonNull(resolutionService, "resolutionService cannot be null");
+        this.entryPointResolver = Objects.requireNonNull(entryPointResolver, "entryPointResolver cannot be null");
         this.clock = clock != null ? clock : Clock.systemUTC();
     }
 
@@ -70,12 +74,34 @@ public class DefaultIncidentService implements IncidentService {
             }
         }
 
+        String serviceHint = request.serviceHint();
+        String errorHint = request.errorHint();
+
+        if ((serviceHint == null || serviceHint.isBlank()) || (errorHint == null || errorHint.isBlank())) {
+            List<ServiceNode> services = graphRepository.loadServices(graphName);
+            List<ErrorSignatureNode> signatures = graphRepository.loadErrorSignatures(graphName);
+            EntryPointsResult entryPoints = entryPointResolver.resolve(
+                    new InvestigationRequest(request.description(), serviceHint, errorHint, reportedAt, incidentId),
+                    services,
+                    signatures,
+                    Set.of()
+            );
+            if (serviceHint == null || serviceHint.isBlank()) {
+                serviceHint = entryPoints.service().map(ResolvedService::serviceId).orElse(null);
+            }
+            if (errorHint == null || errorHint.isBlank()) {
+                errorHint = entryPoints.errorSignature().map(ResolvedErrorSignature::signatureId).orElse(null);
+            }
+        }
+
         IncidentInput input = new IncidentInput(
                 incidentId,
                 title,
                 "OPEN",
                 reportedAt,
                 "P1",
+                serviceHint,
+                errorHint,
                 request.serviceHint(),
                 request.errorHint()
         );
@@ -121,11 +147,11 @@ public class DefaultIncidentService implements IncidentService {
 
         String serviceHint = (overrideRequest != null && overrideRequest.serviceHint() != null && !overrideRequest.serviceHint().isBlank())
                 ? overrideRequest.serviceHint()
-                : incident.symptomServiceId();
+                : incident.serviceHint();
 
         String errorHint = (overrideRequest != null && overrideRequest.errorHint() != null && !overrideRequest.errorHint().isBlank())
                 ? overrideRequest.errorHint()
-                : incident.errorSignatureId();
+                : incident.errorHint();
 
         Long startedAt = (overrideRequest != null && overrideRequest.startedAt() != null && overrideRequest.startedAt() > 0)
                 ? overrideRequest.startedAt()
@@ -139,23 +165,8 @@ public class DefaultIncidentService implements IncidentService {
                 incidentId
         );
 
-        InvestigationReport report = investigationEngine.investigate(graphName, effectiveRequest);
-
-        // If the incident node lacked symptom service or error signature links, derive and persist them from investigation entry points
-        if (incident.symptomServiceId() == null || incident.errorSignatureId() == null) {
-            String derivedServiceId = report.entryPoints().service().map(ResolvedService::serviceId).orElse(null);
-            String derivedSigId = report.entryPoints().errorSignature().map(ResolvedErrorSignature::signatureId).orElse(null);
-            if (derivedServiceId != null || derivedSigId != null) {
-                graphRepository.linkIncidentRelationships(
-                        graphName,
-                        incidentId,
-                        incident.symptomServiceId() == null ? derivedServiceId : null,
-                        incident.errorSignatureId() == null ? derivedSigId : null
-                );
-            }
-        }
-
-        return report;
+        // Read-only investigation: executes without writing or mutating graph state
+        return investigationEngine.investigate(graphName, effectiveRequest);
     }
 
     @Override

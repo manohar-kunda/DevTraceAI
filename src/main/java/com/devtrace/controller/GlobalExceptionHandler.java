@@ -76,13 +76,15 @@ public class GlobalExceptionHandler {
     // 503 Service Unavailable (Database connectivity failure)
     @ExceptionHandler({DatabaseUnavailableException.class, JedisConnectionException.class})
     public ProblemDetail handleDatabaseUnavailableException(Exception ex) {
-        log.warn("FalkorDB database connection failure: {}", ex.getMessage());
+        String correlationId = UUID.randomUUID().toString();
+        log.warn("FalkorDB database connection failure [correlationId={}]: {}", correlationId, ex.getMessage(), ex);
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "Database service is temporarily unavailable. Please verify FalkorDB is running and accessible."
         );
         problem.setTitle("Service Unavailable");
         problem.setType(URI.create("https://devtrace.ai/errors/database-unavailable"));
+        problem.setProperty("correlationId", correlationId);
         return problem;
     }
 

@@ -20,6 +20,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -284,5 +285,49 @@ class IncidentControllerIT {
                 .andExpect(jsonPath("$.hypotheses[1].serviceId").value("service-inventory"))
                 .andExpect(jsonPath("$.hypotheses[1].tier").value("MODERATE"))
                 .andExpect(jsonPath("$.hypotheses[1].rank").value(2));
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("Read-only investigation: calling investigation endpoint twice does not mutate graph nodes or relationships")
+    void testInvestigationIsStrictlyReadOnly() throws Exception {
+        seedService.seed(TEST_GRAPH, true);
+        String roIncidentId = "inc-2026-10-15-readonly-001";
+        CreateIncidentRequest createReq = new CreateIncidentRequest(
+                "Checkout requests are failing after the latest deployment and payment timeouts have increased",
+                null,
+                null,
+                T0,
+                roIncidentId
+        );
+
+        mockMvc.perform(post("/api/incidents")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createReq)))
+                .andExpect(status().isCreated());
+
+        var graph = driver.graph(TEST_GRAPH);
+        long initialNodes = ((Number) graph.query("MATCH (n) RETURN count(n) AS cnt").iterator().next().getValue("cnt")).longValue();
+        long initialRels = ((Number) graph.query("MATCH ()-[r]->() RETURN count(r) AS cnt").iterator().next().getValue("cnt")).longValue();
+
+        // First investigation call
+        mockMvc.perform(post("/api/incidents/" + roIncidentId + "/investigation"))
+                .andExpect(status().isOk());
+
+        long afterFirstNodes = ((Number) graph.query("MATCH (n) RETURN count(n) AS cnt").iterator().next().getValue("cnt")).longValue();
+        long afterFirstRels = ((Number) graph.query("MATCH ()-[r]->() RETURN count(r) AS cnt").iterator().next().getValue("cnt")).longValue();
+
+        assertEquals(initialNodes, afterFirstNodes, "Node count must not change after first investigation");
+        assertEquals(initialRels, afterFirstRels, "Relationship count must not change after first investigation");
+
+        // Second investigation call
+        mockMvc.perform(post("/api/incidents/" + roIncidentId + "/investigation"))
+                .andExpect(status().isOk());
+
+        long afterSecondNodes = ((Number) graph.query("MATCH (n) RETURN count(n) AS cnt").iterator().next().getValue("cnt")).longValue();
+        long afterSecondRels = ((Number) graph.query("MATCH ()-[r]->() RETURN count(r) AS cnt").iterator().next().getValue("cnt")).longValue();
+
+        assertEquals(initialNodes, afterSecondNodes, "Node count must not change after second investigation");
+        assertEquals(initialRels, afterSecondRels, "Relationship count must not change after second investigation");
     }
 }

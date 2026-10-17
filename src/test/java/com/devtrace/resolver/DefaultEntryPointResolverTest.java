@@ -176,4 +176,25 @@ class DefaultEntryPointResolverTest {
         assertTrue(nullRequestResult.service().isEmpty());
         assertTrue(nullRequestResult.errorSignature().isEmpty());
     }
+
+    @Test
+    @DisplayName("Golden sentence resolves symptom service-checkout and signature err-sig-payment-pool-timeout via FREE_TEXT_KEYWORD")
+    void testGoldenSentenceResolvesCheckoutAndPaymentPoolTimeout() {
+        InvestigationRequest request = new InvestigationRequest(
+                "Checkout requests are failing after the latest deployment and payment timeouts have increased"
+        );
+
+        EntryPointsResult result = resolver.resolve(request, sampleServices, sampleSignatures, Set.of());
+
+        assertTrue(result.service().isPresent(), "Symptom service must be resolved from golden sentence");
+        assertEquals("service-checkout", result.service().get().serviceId(),
+                "Checkout service must be resolved as symptom service because 'Checkout requests are failing' describes checkout failing");
+        assertEquals("FREE_TEXT_KEYWORD", result.service().get().evidence().matchSource());
+
+        assertTrue(result.errorSignature().isPresent(), "Error signature must be resolved from golden sentence");
+        assertEquals("err-sig-payment-pool-timeout", result.errorSignature().get().signatureId(),
+                "Payment pool timeout signature must be resolved from 'payment timeouts'");
+        assertEquals("FREE_TEXT_KEYWORD", result.errorSignature().get().evidence().matchSource());
+    }
 }
+
