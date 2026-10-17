@@ -121,6 +121,11 @@ public interface GraphRepository {
     IncidentRecord createOrEnsureIncident(String graphName, IncidentInput input);
 
     /**
+     * Atomically ensures an Incident node has [:AFFECTS] to a symptom service and [:EXHIBITS] to an error signature.
+     */
+    void linkIncidentRelationships(String graphName, String incidentId, String serviceId, String errorSignatureId);
+
+    /**
      * Finds a confirmed Resolution linked to the given Incident ID.
      */
     Optional<ResolutionRecord> findResolutionByIncidentId(String graphName, String incidentId);

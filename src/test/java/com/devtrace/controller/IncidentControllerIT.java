@@ -242,8 +242,47 @@ class IncidentControllerIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.demo").value(true))
                 .andExpect(jsonPath("$.incidentId").value("inc-2026-10-15-checkout-001"))
-                .andExpect(jsonPath("$.serviceHint").value("checkout-service"))
-                .andExpect(jsonPath("$.errorHint").value("err-sig-payment-pool-timeout"))
+                .andExpect(jsonPath("$.serviceHint").doesNotExist())
+                .andExpect(jsonPath("$.errorHint").doesNotExist())
                 .andExpect(jsonPath("$.startedAt").value(T0));
+    }
+
+    @Test
+    @Order(5)
+    @DisplayName("Free-text driven incident investigation without hints resolves entry points with FREE_TEXT_KEYWORD and identical ranking")
+    void testFreeTextDrivenInvestigationWithoutHints() throws Exception {
+        seedService.seed(TEST_GRAPH, true);
+        String freeTextIncidentId = "inc-2026-10-15-free-text-001";
+        CreateIncidentRequest createReq = new CreateIncidentRequest(
+                "Checkout requests are failing after the latest deployment and payment timeouts have increased",
+                null,
+                null,
+                T0,
+                freeTextIncidentId
+        );
+
+        mockMvc.perform(post("/api/incidents")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createReq)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.incidentId").value(freeTextIncidentId))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+
+        // Investigate without hints: free-text resolver must match FREE_TEXT_KEYWORD
+        mockMvc.perform(post("/api/incidents/" + freeTextIncidentId + "/investigation"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("HYPOTHESES_RANKED"))
+                .andExpect(jsonPath("$.entryPoints.service.serviceId").value("service-checkout"))
+                .andExpect(jsonPath("$.entryPoints.service.evidence.matchSource").value("FREE_TEXT_KEYWORD"))
+                .andExpect(jsonPath("$.entryPoints.errorSignature.signatureId").value("err-sig-payment-pool-timeout"))
+                .andExpect(jsonPath("$.entryPoints.errorSignature.evidence.matchSource").value("FREE_TEXT_KEYWORD"))
+                // Verified ranking: payment STRONG rank 1, inventory MODERATE rank 2
+                .andExpect(jsonPath("$.hypotheses", hasSize(2)))
+                .andExpect(jsonPath("$.hypotheses[0].serviceId").value("service-payment"))
+                .andExpect(jsonPath("$.hypotheses[0].tier").value("STRONG"))
+                .andExpect(jsonPath("$.hypotheses[0].rank").value(1))
+                .andExpect(jsonPath("$.hypotheses[1].serviceId").value("service-inventory"))
+                .andExpect(jsonPath("$.hypotheses[1].tier").value("MODERATE"))
+                .andExpect(jsonPath("$.hypotheses[1].rank").value(2));
     }
 }

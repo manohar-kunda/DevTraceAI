@@ -517,6 +517,36 @@ public class FalkorGraphRepository implements GraphRepository {
     }
 
     @Override
+    public void linkIncidentRelationships(String graphName, String incidentId, String serviceId, String errorSignatureId) {
+        if (incidentId == null || incidentId.isBlank()) return;
+        Graph graph = driver.graph(graphName);
+
+        if (serviceId != null && !serviceId.isBlank()) {
+            graph.query(
+                    """
+                    MATCH (i:Incident {id: $id}), (s:Service)
+                    WHERE s.id = $sId OR s.name = $sId OR s.aliases CONTAINS $sId
+                    MERGE (i)-[r:AFFECTS]->(s)
+                    ON CREATE SET r.source = 'runtime'
+                    """,
+                    Map.of("id", incidentId, "sId", serviceId)
+            );
+        }
+
+        if (errorSignatureId != null && !errorSignatureId.isBlank()) {
+            graph.query(
+                    """
+                    MATCH (i:Incident {id: $id}), (e:ErrorSignature)
+                    WHERE e.id = $eId OR e.errorType = $eId OR e.pattern CONTAINS $eId
+                    MERGE (i)-[r:EXHIBITS]->(e)
+                    ON CREATE SET r.source = 'runtime'
+                    """,
+                    Map.of("id", incidentId, "eId", errorSignatureId)
+            );
+        }
+    }
+
+    @Override
     public Optional<ResolutionRecord> findResolutionByIncidentId(String graphName, String incidentId) {
         if (incidentId == null || incidentId.isBlank()) return Optional.empty();
         Graph graph = driver.graph(graphName);

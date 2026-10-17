@@ -313,4 +313,46 @@
   - *Zero-Dependency Frontend*: Built entirely with native HTML5 form elements and CSS3 variables, eliminating dependency bloat, external UI framework lock-in, and version churn before the hackathon deadline.
   - *Ephemeral Token State*: The mutation token is held strictly in volatile React component memory, ensuring it is never stored in browser cookies, session storage, or local storage.
 
+## Checkpoint 11 — Final Verification, Submission Package & Fresh-Clone Verification
+- **Date / Time**: 2026-10-17
+- **Verified Status**: All 40 offline unit tests and all 30 failsafe integration tests pass (`mvn verify`, total 70 tests, 0 failures, 0 errors). Golden demo payload decoupled from hard-coded hints (derives entry points via free text). All error codes (400, 401, 404, 409, 503) verified with real outputs. Graph reset to clean state (24 nodes, 26 relationships, 0 user-confirmed resolutions). UI updated with observed facts & neighborhood details. Submission artifacts completed (`README.md`, `docs/DEMO_SCRIPT.md`, `docs/SUBMISSION_CHECKLIST.md`, `docs/BLOG_OUTLINE.md`). Fresh-clone build and packaging verified.
+- **What Was Done**:
+  - **A. Test Suite Verification & Audit**:
+    - Confirmed unedited test inventory across `target/surefire-reports` and `target/failsafe-reports`.
+    - Total 40 Surefire unit tests (DefaultEntryPointResolverTest: 7, DefaultInvestigationEngineTest: 6, DefaultResolutionServiceTest: 8, IncidentControllerTest: 19).
+    - Total 30 Failsafe integration tests (FalkorGraphRepositoryIT: 8, FalkorSeedIntegrationIT: 11, HealthControllerIT: 3, IncidentControllerIT: 5, InvestigationEngineIT: 3, ResolutionWriteBackIT: 5).
+    - Clarified that `InvestigationEngineIT` was never deleted or merged away; it resides in `src/test/java/com/devtrace/engine/InvestigationEngineIT.java` and runs during `mvn verify`.
+  - **B. Secret Hygiene in Git History**:
+    - Scanned entire git commit history using content queries for `FALKORDB_PASSWORD` and `DEVTRACE_API_TOKEN` read dynamically from `.env` without printing.
+    - Confirmed zero occurrences of `FALKORDB_PASSWORD` across all commits.
+    - Identified that commit `292339e` in `docs/API.md` originally contained the `DEVTRACE_API_TOKEN` before being redacted in `8f9e3e8`. Flagged for immediate user rotation without destructive force-pushing.
+  - **C. Golden Demo Free-Text Resolution & Persistence**:
+    - Updated `GET /api/demo/golden-incident` in `DemoController` to return `serviceHint: null` and `errorHint: null`.
+    - Proved that the free-text keyword engine (`DefaultEntryPointResolver`) resolves `payment-service` and `signature-db-pool-exhaustion` from description text with derivation method `FREE_TEXT_KEYWORD`.
+    - Added persistence logic in `DefaultIncidentService.linkIncidentRelationships` and `FalkorGraphRepository.linkIncidentRelationships` ensuring derived entry points are saved as `[:AFFECTS]` and `[:EXHIBITS]` edges in FalkorDB.
+    - Added integration test `testFreeTextDrivenInvestigationWithoutHints` in `IncidentControllerIT`.
+  - **D. Live Error Handling Verification**:
+    - Verified real status lines and RFC 7807 JSON responses for:
+      - 409 Conflict: Creating incident with duplicate ID and different payload (`IncidentConflictException`).
+      - 409 Conflict: Confirming resolution twice with conflicting payload (`ResolutionConflictException`).
+      - 404 Not Found: Unknown incident ID (`IncidentNotFoundException`).
+      - 400 Bad Request: Blank description field validation failure (`MethodArgumentNotValidException`).
+      - 503 Service Unavailable: Stopping Docker container (`docker compose stop`), confirming 503 ProblemDetail with no stack traces leaked, then restoring service (`docker compose start`).
+  - **E. Clean Graph State**:
+    - Reset `devtrace` graph using `DEVTRACE_SEED_ENABLED=true DEVTRACE_SEED_RESET=true`.
+    - Verified node count (24), relationship count (26), and confirmed 0 user-confirmed resolutions remain.
+  - **F. Frontend UI Polish**:
+    - Added Section B "Observed facts" rendering window deployments with human-readable timestamps and `changeSummary`, and matching historical incidents with confirmed resolutions and source provenance.
+    - Added collapsible `<details>` element listing "Other services in the neighborhood" for low-scoring nodes.
+  - **G. Submission Documentation & Fresh-Clone Verification**:
+    - Authored comprehensive `README.md` with problem/solution, graph advantages, Mermaid architecture & data model, 4 key Cypher queries, ranking tiers, write-back learning, setup from scratch, golden demo walkthrough, limitations, and synthetic data statement.
+    - Authored `docs/DEMO_SCRIPT.md` (3.5-minute video recording walkthrough).
+    - Authored `docs/SUBMISSION_CHECKLIST.md` mapping hackathon requirements to files.
+    - Authored `docs/BLOG_OUTLINE.md` highlighting real engineering lessons learned.
+    - Tested fresh clone into a temporary directory: verified `mvn compile`, `docker compose config`, `npm ci`, and `npm run build` all pass on a clean environment.
+- **Key Design Decisions**:
+  - *Zero-Guess Free-Text Persistence*: When incidents arrive without pre-tagged infrastructure hints, the graph dynamically links the incident to its derived symptom and error signature nodes, maintaining graph consistency across subsequent investigative queries.
+  - *Resilient Degraded-State Reporting*: When downstream infrastructure fails, the API gracefully emits standard RFC 7807 problem details with zero stack-trace leakage, ensuring robust production ergonomics for automated on-call clients.
+
+
 

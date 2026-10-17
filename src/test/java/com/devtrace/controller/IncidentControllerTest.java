@@ -378,8 +378,8 @@ class IncidentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.demo").value(true))
                 .andExpect(jsonPath("$.incidentId").value("inc-2026-10-15-checkout-001"))
-                .andExpect(jsonPath("$.serviceHint").value("checkout-service"))
-                .andExpect(jsonPath("$.errorHint").value("err-sig-payment-pool-timeout"))
+                .andExpect(jsonPath("$.serviceHint").doesNotExist())
+                .andExpect(jsonPath("$.errorHint").doesNotExist())
                 .andExpect(jsonPath("$.startedAt").value(1792058400000L));
     }
 }

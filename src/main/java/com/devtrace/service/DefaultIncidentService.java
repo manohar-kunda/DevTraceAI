@@ -139,7 +139,23 @@ public class DefaultIncidentService implements IncidentService {
                 incidentId
         );
 
-        return investigationEngine.investigate(graphName, effectiveRequest);
+        InvestigationReport report = investigationEngine.investigate(graphName, effectiveRequest);
+
+        // If the incident node lacked symptom service or error signature links, derive and persist them from investigation entry points
+        if (incident.symptomServiceId() == null || incident.errorSignatureId() == null) {
+            String derivedServiceId = report.entryPoints().service().map(ResolvedService::serviceId).orElse(null);
+            String derivedSigId = report.entryPoints().errorSignature().map(ResolvedErrorSignature::signatureId).orElse(null);
+            if (derivedServiceId != null || derivedSigId != null) {
+                graphRepository.linkIncidentRelationships(
+                        graphName,
+                        incidentId,
+                        incident.symptomServiceId() == null ? derivedServiceId : null,
+                        incident.errorSignatureId() == null ? derivedSigId : null
+                );
+            }
+        }
+
+        return report;
     }
 
     @Override

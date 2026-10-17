@@ -18,8 +18,8 @@ public class DemoController {
                 true,
                 "inc-2026-10-15-checkout-001",
                 "Checkout requests are failing after the latest deployment and payment timeouts have increased",
-                "checkout-service",
-                "err-sig-payment-pool-timeout",
+                null,
+                null,
                 T0
         ));
     }

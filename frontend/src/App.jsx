@@ -369,8 +369,46 @@ export default function App() {
             </div>
           </div>
 
-          {/* Section B: Ranked Hypotheses */}
-          <h3 className="section-title">B. Ranked Root-Cause Hypotheses</h3>
+          {/* Section B: Observed Facts */}
+          <h3 className="section-title">B. Observed Facts</h3>
+          {report.observedFacts?.deploymentsInWindow && report.observedFacts.deploymentsInWindow.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <span className="kv-label">Deployments in Analysis Window ({report.observedFacts.deploymentsInWindow.length}):</span>
+              <ul className="evidence-list" style={{ marginTop: '8px' }}>
+                {report.observedFacts.deploymentsInWindow.map((dep) => {
+                  const refTime = report.requestEcho?.startedAt || Date.now();
+                  const minsBefore = Math.round((refTime - dep.deployedAt) / 60000);
+                  return (
+                    <li key={dep.deploymentId} className="evidence-item" style={{ borderLeftColor: '#3b82f6' }}>
+                      <strong>{dep.deploymentId}</strong> on <em>{dep.serviceId}</em> ({dep.version}) deployed at{' '}
+                      <code>{new Date(dep.deployedAt).toISOString()}</code> ({minsBefore >= 0 ? `${minsBefore}m before incident` : `${Math.abs(minsBefore)}m after incident`}): {dep.changeSummary}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {report.observedFacts?.matchedHistoricalIncidents && report.observedFacts.matchedHistoricalIncidents.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <span className="kv-label">Matched Historical Incidents ({report.observedFacts.matchedHistoricalIncidents.length}):</span>
+              <ul className="evidence-list" style={{ marginTop: '8px' }}>
+                {report.observedFacts.matchedHistoricalIncidents.map((inc) => (
+                  <li key={inc.incidentId} className="evidence-item" style={{ borderLeftColor: '#10b981' }}>
+                    <strong>{inc.incidentId}</strong>: "{inc.title}" (Status: {inc.status})
+                    {inc.confirmedResolution && (
+                      <div style={{ marginTop: '4px', fontSize: '12px', color: '#166534' }}>
+                        Confirmed Resolution: <strong>{inc.confirmedResolution.id}</strong> ({inc.confirmedResolution.title}) — Source: <code>{inc.confirmedResolution.source}</code>, Confirmed: <code>{new Date(inc.confirmedResolution.confirmedAt).toISOString()}</code>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Section C: Ranked Hypotheses */}
+          <h3 className="section-title">C. Ranked Root-Cause Hypotheses</h3>
           {report.hypotheses && report.hypotheses.length > 0 ? (
             <div>
               {report.hypotheses.map((h) => (
@@ -408,8 +446,8 @@ export default function App() {
             <p style={{ fontSize: '14px', color: '#64748b' }}>No strong or moderate hypotheses identified.</p>
           )}
 
-          {/* Section C: Topological Failure Propagation Path */}
-          <h3 className="section-title">C. Failure Propagation Path & Blast Radius</h3>
+          {/* Section D: Topological Failure Propagation Path & Blast Radius */}
+          <h3 className="section-title">D. Failure Propagation Path & Blast Radius</h3>
           {report.graphRelationships?.pathsToCandidates && (
             <div>
               <p style={{ fontSize: '13px', color: '#475569' }}>
@@ -441,8 +479,24 @@ export default function App() {
             </div>
           )}
 
-          {/* Section D: Suggested Next Steps */}
-          <h3 className="section-title">D. Suggested Next Steps</h3>
+          {/* Collapsible Other Services in Neighborhood */}
+          {report.otherServicesInNeighborhood && report.otherServicesInNeighborhood.length > 0 && (
+            <details style={{ marginTop: '16px', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13px', color: '#475569' }}>
+                Other Services in Topological Neighborhood ({report.otherServicesInNeighborhood.length})
+              </summary>
+              <div className="tag-group" style={{ marginTop: '10px' }}>
+                {report.otherServicesInNeighborhood.map((s) => (
+                  <span key={s.id} className="tag">
+                    {s.name} ({s.id}, {s.hops} hops)
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {/* Section E: Suggested Next Steps */}
+          <h3 className="section-title">E. Suggested Next Steps</h3>
           {report.suggestedNextSteps && report.suggestedNextSteps.length > 0 ? (
             <div>
               {report.suggestedNextSteps.map((step, idx) => (
@@ -458,10 +512,10 @@ export default function App() {
             <p style={{ fontSize: '14px', color: '#64748b' }}>No immediate steps suggested.</p>
           )}
 
-          {/* Section E: Ignored Changes Outside Neighborhood */}
+          {/* Section F: Ignored Changes Outside Neighborhood */}
           {report.ignoredChanges && report.ignoredChanges.length > 0 && (
             <div>
-              <h3 className="section-title">E. Ignored Changes Outside Dependency Neighborhood</h3>
+              <h3 className="section-title">F. Ignored Changes Outside Dependency Neighborhood</h3>
               <ul className="evidence-list">
                 {report.ignoredChanges.map((c) => (
                   <li key={c.changeId} className="evidence-item" style={{ borderLeftColor: '#94a3b8' }}>
@@ -472,8 +526,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Section F: Limitations & Assumptions */}
-          <h3 className="section-title">F. Reasoning Boundaries & Limitations</h3>
+          {/* Section G: Limitations & Assumptions */}
+          <h3 className="section-title">G. Reasoning Boundaries & Limitations</h3>
           <ul className="limitation-list">
             {report.limitations?.map((lim, idx) => (
               <li key={idx}>{lim}</li>
