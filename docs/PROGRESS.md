@@ -288,3 +288,29 @@
   - *Fail-Closed Secret Boundary*: If the deployment environment fails to provide `DEVTRACE_API_TOKEN`, the mutation endpoint immediately blocks requests rather than defaulting to open access or a weak default secret.
   - *Standard RFC 7807 ProblemDetail*: Eliminates custom ad-hoc error formats in favor of standardized HTTP problem details understood natively by modern frontend clients and API gateways.
 
+## Checkpoint 10 — Verification Completion, Git Remote Synchronization & Single-Page React UI
+- **Date / Time**: 2026-10-17
+- **Verified Status**: All 40 Surefire unit tests and 29 Failsafe integration tests pass (`mvn verify`, 0 failures, 0 errors). Git hygiene verified, secret scan verified zero leaks, branch pushed to GitHub `https://github.com/manohar-kunda/DevTraceAI.git`. Single-page React UI (Vite + React + plain CSS) operational on dev port 5173.
+- **What Was Done**:
+  - **A. Step 1 Verification & Integration Test Hardening**:
+    - Confirmed `devtrace` graph node count (24) and relationship count (26) in container `devtrace-falkordb`.
+    - Enhanced `IncidentRecord` and `FalkorGraphRepository.createOrEnsureIncident` / `findIncidentById` to resolve and populate incident symptom service and error signature linkages across name, ID, and alias.
+    - Executed full `mvn verify` test suite: 40 Surefire unit tests + 29 Failsafe integration tests (HealthControllerIT: 3, IncidentControllerIT: 2, FalkorGraphRepositoryIT: 8, FalkorSeedIntegrationIT: 11, ResolutionWriteBackIT: 5). Zero tests were deleted, merged, or weakened.
+    - Executed live `curl.exe` commands against backend port 8085 covering `/api/health`, `/api/demo/golden-incident`, `/api/services/service-payment/blast-radius`, `POST /api/incidents` (201 Created and 200 OK idempotent repeat), `POST /api/incidents/{id}/investigation` (200 OK, HYPOTHESES_RANKED), `POST /api/incidents/{id}/resolution` (401 Unauthorized without token, 201 Created with token from env, 200 OK idempotent repeat), and `GET /api/incidents/{id}` (200 OK, status RESOLVED with confirmed resolution object).
+    - Verified secret hygiene: `.env` untracked (`git check-ignore -v .env`), full repository secret scan verified 0 leaks of `FALKORDB_PASSWORD` or `DEVTRACE_API_TOKEN` across tracked files, redacted token in documentation.
+    - Pushed `main` branch to GitHub remote `https://github.com/manohar-kunda/DevTraceAI.git`.
+  - **B. Step 2 Single-Page React UI Dashboard (`/frontend`)**:
+    - Initialized Vite + React application in `/frontend` running on dev server port 5173 with proxy / base URL configured via `VITE_API_BASE_URL` (`http://localhost:8085`).
+    - Styled with pure CSS (`index.css`) with zero external UI/component/graph libraries.
+    - Built single-page layout featuring:
+      - Top header with prominent "Synthetic Demo Data" pill.
+      - Incident input card with "Load Demo Golden Incident" button (pre-fills form from `/api/demo/golden-incident`) and "Investigate Incident" button.
+      - RFC 7807 error banner displaying `title`, `status`, `detail`, and `correlationId` (never exposing stack traces).
+      - Structured investigation report rendering sections in exact required order: (A) Resolved entry points, (B) Ranked root-cause hypotheses with tier badges (`STRONG`, `MODERATE`), plain-language rationale, and timestamped evidence, (C) Directed dependency propagation paths and blast radius tags, (D) Suggested next steps with confirmed remediation provenance, (E) Ignored changes outside neighborhood, (F) Reasoning boundaries and limitations.
+      - Human-in-the-loop resolution confirmation form: accepts remediation parameters and DevTrace API token held strictly in ephemeral React state (never persisted to localStorage or printed).
+    - Verified production build succeeds (`npm run build`, 187ms) and dev server serves on `http://localhost:5173/`.
+- **Key Design Decisions**:
+  - *Zero-Dependency Frontend*: Built entirely with native HTML5 form elements and CSS3 variables, eliminating dependency bloat, external UI framework lock-in, and version churn before the hackathon deadline.
+  - *Ephemeral Token State*: The mutation token is held strictly in volatile React component memory, ensuring it is never stored in browser cookies, session storage, or local storage.
+
+
