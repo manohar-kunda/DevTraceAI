@@ -1,0 +1,7 @@
+{
+  "description": "Orders timing out during payment gateway handoff with connection pool exhaustion",
+  "serviceHint": "checkout-service",
+  "errorHint": "err-sig-payment-pool-timeout",
+  "startedAt": 1792067400000,
+  "incidentId": "inc-2026-10-15-checkout-002"
+}

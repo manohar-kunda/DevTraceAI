@@ -190,6 +190,11 @@ public class FalkorGraphRepository implements GraphRepository {
 
     @Override
     public List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds) {
+        return findSimilarIncidents(graphName, errorSignatureId, candidateServiceIds, null);
+    }
+
+    @Override
+    public List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds, String excludeIncidentId) {
         if (errorSignatureId == null || errorSignatureId.isBlank() || candidateServiceIds == null || candidateServiceIds.isEmpty()) {
             return List.of();
         }
@@ -200,20 +205,21 @@ public class FalkorGraphRepository implements GraphRepository {
             MATCH (i)-[:AFFECTS]->(aff:Service)
             MATCH (r:Resolution)-[:RESOLVES]->(i)
             MATCH (r)-[:ADDRESSES]->(s:Service)
-            WHERE s.id IN $serviceIds OR aff.id IN $serviceIds
+            WHERE (s.id IN $serviceIds OR aff.id IN $serviceIds)
+              AND ($excludeIncidentId = '' OR i.id <> $excludeIncidentId)
             RETURN i.id AS incidentId, i.title AS title, i.status AS status, e.id AS errorSignatureId,
                    collect(DISTINCT aff.id) AS affectedServiceIds,
                    s.id AS addressedServiceId,
                    r.id AS resId, r.title AS resTitle, r.remediationType AS resRemediationType,
                    r.actionTaken AS resActionTaken, r.confirmedAt AS resConfirmedAt, r.confirmedBy AS resConfirmedBy,
                    r.source AS resSource
-            ORDER BY i.reportedAt DESC
+            ORDER BY r.confirmedAt DESC, i.id ASC
         """;
 
-        Map<String, Object> params = Map.of(
-                "sigId", errorSignatureId,
-                "serviceIds", new ArrayList<>(candidateServiceIds)
-        );
+        Map<String, Object> params = new HashMap<>();
+        params.put("sigId", errorSignatureId);
+        params.put("serviceIds", new ArrayList<>(candidateServiceIds));
+        params.put("excludeIncidentId", excludeIncidentId != null ? excludeIncidentId : "");
 
         ResultSet rs = graph.readOnlyQuery(cypher, params);
         List<SimilarIncidentRecord> records = new ArrayList<>();

@@ -252,3 +252,39 @@
   - *Server-Controlled Provenance & Clock Isolation*: Timestamps (`confirmedAt`) and provenance (`source: 'user-confirmed'`) are minted exclusively by the server using an injected `Clock`, preventing client clock skew, tampering, or backdated entries from corrupting historical analysis.
   - *Atomic Single-Statement Write-Back*: The incident status transition (`status: 'RESOLVED'`), resolution node creation, and relationship joins (`[:RESOLVES]`, `[:ADDRESSES]`, `[:TRIGGERED_BY]`) occur in a single atomic Cypher MERGE/SET statement, ensuring no partially-applied states or orphan resolutions can exist in FalkorDB.
 
+## Checkpoint 9 — REST API Layer, Security Interceptor & RFC 7807 Error Handling
+- **Date / Time**: 2026-10-17
+- **Verified Status**: All 40 offline unit tests passed (`mvn test` in 9.35s, 0 failures, 0 errors). REST controllers, token security interceptor, CORS policy, validation bounds, and RFC 7807 error envelopes operational.
+- **What Was Done**:
+  - **A. DTO Layer & Validation Bounds**:
+    - Created dedicated DTOs in `com.devtrace.dto`: `CreateIncidentRequest`, `CreateIncidentResponse`, `IncidentStatusResponse`, `ConfirmResolutionRequest`, `GoldenIncidentResponse`, `BlastRadiusResponse`.
+    - Applied Jakarta validation constraints with length bounds (`@NotBlank`, `@Size(max = 2000)` on description/actionTaken, `@Size(max = 200)` on hints/titles, `@Size(max = 100)` on IDs).
+  - **B. Application Service (`IncidentService`)**:
+    - Created `IncidentService` and `DefaultIncidentService` to encapsulate orchestration logic away from web controllers.
+    - Idempotent incident creation: repeat identical payloads return HTTP 200 with existing record; conflicting payloads on same ID throw `IncidentConflictException` (HTTP 409).
+    - Read-only investigation: executes without modifying graph state; defaults `startedAt` to incident's `reportedAt` or clock fallback recorded in assumptions; excludes current incident from its own historical matches.
+    - Blast radius: enforces server-side clamping on `maxDepth` between 1 and 10.
+  - **C. Token Security & Cross-Cutting Interceptor**:
+    - Implemented `DevTraceTokenInterceptor` inspecting header `X-DevTrace-Token` on `POST /api/incidents/*/resolution`.
+    - Enforced constant-time comparison via `MessageDigest.isEqual` to prevent timing attacks.
+    - Fail-closed security: if `DEVTRACE_API_TOKEN` is unset or empty on the server, the resolution endpoint is disabled with a clear 401 error. Tokens are never logged or echoed.
+    - CORS configured in `WebMvcConfig` restricting access strictly to the configured dev UI origin (`http://localhost:5173`, never `*`).
+  - **D. RFC 7807 Error Envelope (`@RestControllerAdvice`)**:
+    - Created `GlobalExceptionHandler` mapping domain exceptions to standard `ProblemDetail`:
+      - Validation errors -> 400 Bad Request (includes map of field errors).
+      - Domain not found -> 404 Not Found (`IncidentNotFoundException`, `ServiceNotFoundException`, `DeploymentNotFoundException`).
+      - State/payload conflicts -> 409 Conflict (`IncidentConflictException`, `ResolutionConflictException`, `IncidentAlreadyResolvedException`).
+      - Token authentication failures -> 401 Unauthorized (`UnauthorizedException`).
+      - Database connectivity failures -> 503 Service Unavailable (`DatabaseUnavailableException`, `JedisConnectionException`) with clear message and zero stack trace leakage.
+      - Unexpected errors -> 500 Internal Server Error (opaque message with correlation ID; stack trace logged on server only).
+  - **E. Offline Unit Testing Suite (`IncidentControllerTest`)**:
+    - Implemented 19 unit tests with MockMvc and mocked services testing every status code, validation failure, missing/invalid token, unset token fail-closed behavior, error body shape, and 503 database-unavailable mapping.
+    - Total offline unit test suite expanded to 40 tests (100% database-independent).
+  - **F. Documentation & Example Payloads**:
+    - Authored `docs/API.md` documenting endpoint specifications, graph operations, status codes, and `curl.exe` invocation with `--data-binary @file`.
+    - Created reusable request bodies in `docs/examples/`: `create-incident.json`, `confirm-resolution.json`, `create-incident-2.json`.
+- **Key Design Decisions**:
+  - *Separation of DTOs and Domain Models*: API request/response DTOs are isolated from internal domain entities, preventing accidental serialization leaks and decoupling HTTP contract evolution from graph repository models.
+  - *Fail-Closed Secret Boundary*: If the deployment environment fails to provide `DEVTRACE_API_TOKEN`, the mutation endpoint immediately blocks requests rather than defaulting to open access or a weak default secret.
+  - *Standard RFC 7807 ProblemDetail*: Eliminates custom ad-hoc error formats in favor of standardized HTTP problem details understood natively by modern frontend clients and API gateways.
+

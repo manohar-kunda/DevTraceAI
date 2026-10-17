@@ -71,7 +71,7 @@ class DefaultInvestigationEngineTest {
         ));
 
         // Similar incidents: on svc-both and svc-sig-only
-        when(graphRepository.findSimilarIncidents(eq(graph), eq("err-sig-timeout"), anySet())).thenReturn(List.of(
+        when(graphRepository.findSimilarIncidents(eq(graph), eq("err-sig-timeout"), anySet(), any())).thenReturn(List.of(
                 new SimilarIncidentRecord("inc-both", "Incident Both", "err-sig-timeout", List.of("svc-both"), "RESOLVED", List.of(), null),
                 new SimilarIncidentRecord("inc-sig", "Incident Sig", "err-sig-timeout", List.of("svc-sig-only"), "RESOLVED", List.of(), null)
         ));
@@ -311,7 +311,7 @@ class DefaultInvestigationEngineTest {
         when(graphRepository.findAllDeploymentsInWindow(eq(graph), anyLong(), anyLong())).thenReturn(deployments);
 
         // Payment has matching historical incident with confirmed resolution
-        when(graphRepository.findSimilarIncidents(eq(graph), eq("err-sig-payment-pool-timeout"), anySet())).thenReturn(List.of(
+        when(graphRepository.findSimilarIncidents(eq(graph), eq("err-sig-payment-pool-timeout"), anySet(), any())).thenReturn(List.of(
                 new SimilarIncidentRecord(
                         "inc-2026-08-12-pay", "Payment timeout surge", "err-sig-payment-pool-timeout",
                         List.of("service-payment"), "RESOLVED", List.of(),

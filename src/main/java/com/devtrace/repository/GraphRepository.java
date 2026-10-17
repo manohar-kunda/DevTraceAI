@@ -58,12 +58,17 @@ public interface GraphRepository {
      * Finds historical incidents via deterministic structured graph matching.
      * Traverses (r:Resolution)-[:ADDRESSES]->(s:Service) and requires i.status = 'RESOLVED'.
      *
-     * @param graphName          Target graph.
-     * @param errorSignatureId   ErrorSignature ID matched from entry points.
+     * @param graphName           Target graph.
+     * @param errorSignatureId    ErrorSignature ID matched from entry points.
      * @param candidateServiceIds Candidate service IDs in the topological neighborhood.
-     * @return List of SimilarIncidentRecord instances with confirmed resolutions and provenance.
+     * @param excludeIncidentId   Optional incident ID to exclude from history (so an incident never appears in its own history).
+     * @return List of SimilarIncidentRecord instances with confirmed resolutions and provenance, ordered confirmedAt DESC, then id.
      */
-    List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds);
+    List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds, String excludeIncidentId);
+
+    default List<SimilarIncidentRecord> findSimilarIncidents(String graphName, String errorSignatureId, Set<String> candidateServiceIds) {
+        return findSimilarIncidents(graphName, errorSignatureId, candidateServiceIds, null);
+    }
 
     /**
      * Finds deployments on candidate services within a time window.

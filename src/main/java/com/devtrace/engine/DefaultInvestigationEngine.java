@@ -176,7 +176,7 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
         Optional<ResolvedErrorSignature> sigOpt = entryPoints.resolvedSignature();
         if (sigOpt.isPresent()) {
             similarIncidents = graphRepository.findSimilarIncidents(
-                    graphName, sigOpt.get().signatureId(), candidateServiceIds
+                    graphName, sigOpt.get().signatureId(), candidateServiceIds, request.incidentId()
             );
         }
 
@@ -232,22 +232,25 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
 
             ResolutionRecord confirmedRes = null;
             if (!serviceIncidents.isEmpty()) {
-                SimilarIncidentRecord inc = serviceIncidents.get(0);
-                evidenceItems.add(new EvidenceItem(
-                        "findSimilarIncidents",
-                        inc.incidentId(),
-                        "HISTORICAL_INCIDENT",
-                        "The same service was affected by the same error signature in " + inc.incidentId() + " (" + inc.title() + ")"
-                ));
-                if (inc.hasConfirmedResolution()) {
-                    confirmedRes = inc.confirmedResolution();
+                for (SimilarIncidentRecord inc : serviceIncidents) {
                     evidenceItems.add(new EvidenceItem(
-                        "findSimilarIncidents",
-                        confirmedRes.id(),
-                        "CONFIRMED_RESOLUTION",
-                        "Consider the previously confirmed remediation " + confirmedRes.id() + " (from a different incident: " + inc.incidentId() + "): " + confirmedRes.title()
+                            "findSimilarIncidents",
+                            inc.incidentId(),
+                            "HISTORICAL_INCIDENT",
+                            "The same service was affected by the same error signature in " + inc.incidentId() + " (" + inc.title() + ")"
                     ));
+                    if (inc.hasConfirmedResolution()) {
+                        ResolutionRecord res = inc.confirmedResolution();
+                        String isoDate = java.time.Instant.ofEpochMilli(res.confirmedAt()).toString();
+                        evidenceItems.add(new EvidenceItem(
+                                "findSimilarIncidents",
+                                res.id(),
+                                "CONFIRMED_RESOLUTION",
+                                "Consider the previously confirmed remediation " + res.id() + " (source: " + res.source() + ", confirmed: " + isoDate + ", from incident " + inc.incidentId() + "): " + res.title()
+                        ));
+                    }
                 }
+                confirmedRes = serviceIncidents.get(0).confirmedResolution();
             }
 
             // hopDistance is a direct field on CandidateHypothesis, not an EvidenceItem.
@@ -364,8 +367,13 @@ public class DefaultInvestigationEngine implements InvestigationEngine {
         // 11. Suggested Next Steps
         List<SuggestedNextStep> nextSteps = new ArrayList<>();
         if (hasViableCandidate && topCandidate != null) {
-            if (topCandidate.hasConfirmedResolution()) {
-                nextSteps.add(SuggestedNextStep.fromConfirmedResolution(topCandidate.confirmedResolution()));
+            List<SimilarIncidentRecord> candidateIncidents = similarIncidents.stream()
+                    .filter(inc -> inc.affectedServiceIds().contains(topCandidate.serviceId()))
+                    .toList();
+            for (SimilarIncidentRecord inc : candidateIncidents) {
+                if (inc.hasConfirmedResolution()) {
+                    nextSteps.add(SuggestedNextStep.fromConfirmedResolution(inc.confirmedResolution()));
+                }
             }
             if (topCandidate.mostRecentChangeTimestamp() != null) {
                 nextSteps.add(SuggestedNextStep.genericDiagnostic(

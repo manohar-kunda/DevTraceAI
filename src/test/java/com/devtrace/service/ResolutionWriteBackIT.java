@@ -54,7 +54,7 @@ class ResolutionWriteBackIT {
         seedService = new FalkorSeedService(driver, bootstrap);
 
         repository = new FalkorGraphRepository(driver);
-        fixedClock = Clock.fixed(Instant.ofEpochMilli(T0), ZoneOffset.UTC);
+        fixedClock = Clock.fixed(Instant.ofEpochMilli(T0 + 7200000L), ZoneOffset.UTC); // 12:00:00 UTC (T0 + 2h)
         resolutionService = new DefaultResolutionService(repository, fixedClock);
 
         DefaultEntryPointResolver resolver = new DefaultEntryPointResolver();
@@ -86,27 +86,28 @@ class ResolutionWriteBackIT {
     @Order(1)
     @DisplayName("Act 4 Before/After: OPEN incident excluded -> Confirm resolution -> Knowledge evolution retrieves both seeded and user-confirmed")
     void testAct4BeforeAndAfterResolutionWriteBack() throws Exception {
-        // 1. Create an active OPEN incident in FalkorDB: inc-2026-10-15-checkout-001
+        // 1. Create an active OPEN incident in FalkorDB: inc-2026-10-15-checkout-001 (Incident A, started 09:30 UTC)
         String incidentAId = "inc-2026-10-15-checkout-001";
         IncidentInput incidentA = new IncidentInput(
                 incidentAId,
                 "Payment timeout surge post deployment v2.4.1",
                 "OPEN",
-                T0 - 1800000L, // 30 minutes before T0
+                T0 - 1800000L, // 09:30:00 UTC
                 "P1",
                 "service-checkout",
                 "err-sig-payment-pool-timeout"
         );
         resolutionService.createOrEnsureIncident(TEST_GRAPH, incidentA);
 
-        // 2. Run investigation BEFORE resolution confirmation
-        InvestigationRequest request = new InvestigationRequest(
-                "Checkout requests are failing after the latest deployment and payment timeouts have increased",
-                "service-checkout", "err-sig-payment-pool-timeout", T0
+        // 2. Incident B (distinct new incident occurring at 12:30 UTC): Investigate BEFORE Incident A is resolved
+        String incidentBId = "inc-2026-10-15-checkout-002";
+        InvestigationRequest requestB = new InvestigationRequest(
+                "Orders timing out during payment gateway handoff with connection pool exhaustion",
+                "service-checkout", "err-sig-payment-pool-timeout", T0 + 9000000L, incidentBId
         );
 
-        InvestigationReport reportBefore = engine.investigate(TEST_GRAPH, request);
-        List<SimilarIncidentRecord> historyBefore = reportBefore.observedFacts().matchedHistoricalIncidents();
+        InvestigationReport reportBBefore = engine.investigate(TEST_GRAPH, requestB);
+        List<SimilarIncidentRecord> historyBefore = reportBBefore.observedFacts().matchedHistoricalIncidents();
 
         // Verify: OPEN incident A is NEVER returned as historical evidence
         assertFalse(historyBefore.stream().anyMatch(h -> h.incidentId().equals(incidentAId)),
@@ -115,12 +116,12 @@ class ResolutionWriteBackIT {
         assertEquals("inc-2026-08-12-pay", historyBefore.get(0).incidentId());
         assertEquals("synthetic", historyBefore.get(0).confirmedResolution().source());
 
-        // 3. User Mitigation Action: Confirm resolution on incident A via ResolutionService
+        // 3. User Mitigation Action: Confirm resolution on Incident A via ResolutionService at 12:00 UTC (T0 + 2h)
         ResolutionInput resInput = new ResolutionInput(
                 "service-payment",
-                "Roll back HikariCP pool limit and increase timeout",
+                "Reverted HikariCP connection pool constraints via hotfix config deploy",
                 "CONFIG_CHANGE",
-                "Increased HikariCP maximumPoolSize to 50 and connectionTimeout to 30000ms on postgres-payments datasource.",
+                "Patched ConfigMap to set maximumPoolSize=40, connectionTimeout=25000ms, and restarted payment-service pods to restore connection pool headroom.",
                 "sre-alice",
                 "dep-payment-v2.4.1"
         );
@@ -130,46 +131,57 @@ class ResolutionWriteBackIT {
         assertEquals("res-" + incidentAId, confirmedRes.id());
         assertEquals("user-confirmed", confirmedRes.source());
         assertEquals("sre-alice", confirmedRes.confirmedBy());
-        assertEquals(T0, confirmedRes.confirmedAt());
+        assertEquals(T0 + 7200000L, confirmedRes.confirmedAt(), "Confirmed at must be strictly from test clock (T0 + 2h)");
+        assertTrue(confirmedRes.confirmedAt() > incidentA.reportedAt(), "confirmedAt must be after startedAt");
 
         // Verify incident status changed to RESOLVED
         Optional<IncidentRecord> resolvedIncident = repository.findIncidentById(TEST_GRAPH, incidentAId);
         assertTrue(resolvedIncident.isPresent());
         assertEquals("RESOLVED", resolvedIncident.get().status());
 
-        // 4. Subsequent Investigation: Investigate incident B with the same error signature
-        InvestigationRequest requestB = new InvestigationRequest(
-                "Orders timing out during payment gateway handoff with connection pool exhaustion",
-                "service-checkout", "err-sig-payment-pool-timeout", T0 + 3600000L
-        );
+        // 4. Subsequent Investigation: Investigate Incident B AFTER Incident A was resolved
+        InvestigationReport reportBAfter = engine.investigate(TEST_GRAPH, requestB);
+        List<SimilarIncidentRecord> historyAfter = reportBAfter.observedFacts().matchedHistoricalIncidents();
 
-        InvestigationReport reportAfter = engine.investigate(TEST_GRAPH, requestB);
-        List<SimilarIncidentRecord> historyAfter = reportAfter.observedFacts().matchedHistoricalIncidents();
+        // Verify: Knowledge evolution now retrieves BOTH the newly confirmed incident A AND the seeded incident!
+        assertEquals(2, historyAfter.size(), "Historical incidents must now include BOTH user-confirmed and seeded resolutions");
 
-        // Verify: Knowledge evolution now retrieves BOTH the original seeded incident AND incident A!
-        assertEquals(2, historyAfter.size(), "Historical incidents must now include BOTH seeded and user-confirmed resolutions");
+        // Verification (b): Matched history is strictly ordered confirmedAt DESC, then id
+        assertEquals(incidentAId, historyAfter.get(0).incidentId(), "Newest resolution (user-confirmed at T0 + 2h) must be first");
+        assertEquals("inc-2026-08-12-pay", historyAfter.get(1).incidentId(), "Older resolution (synthetic) must be second");
+        assertTrue(historyAfter.get(0).confirmedResolution().confirmedAt() > historyAfter.get(1).confirmedResolution().confirmedAt(),
+                "History must be ordered confirmedAt DESC");
 
-        SimilarIncidentRecord matchIncidentA = historyAfter.stream()
-                .filter(h -> h.incidentId().equals(incidentAId))
-                .findFirst().orElseThrow();
+        SimilarIncidentRecord matchIncidentA = historyAfter.get(0);
         assertEquals("user-confirmed", matchIncidentA.confirmedResolution().source());
         assertEquals("sre-alice", matchIncidentA.confirmedResolution().confirmedBy());
-        assertEquals(T0, matchIncidentA.confirmedResolution().confirmedAt());
+        assertEquals(T0 + 7200000L, matchIncidentA.confirmedResolution().confirmedAt());
 
-        SimilarIncidentRecord matchSeeded = historyAfter.stream()
-                .filter(h -> h.incidentId().equals("inc-2026-08-12-pay"))
-                .findFirst().orElseThrow();
+        SimilarIncidentRecord matchSeeded = historyAfter.get(1);
         assertEquals("synthetic", matchSeeded.confirmedResolution().source());
         assertEquals("sre-oncall", matchSeeded.confirmedResolution().confirmedBy());
 
-        // 5. Print both reports' matchedHistoricalIncidents side by side
+        // Verification (a): An incident NEVER appears in its own history
+        InvestigationRequest requestA = new InvestigationRequest(
+                "Checkout requests are failing after the latest deployment and payment timeouts have increased",
+                "service-checkout", "err-sig-payment-pool-timeout", T0, incidentAId
+        );
+        InvestigationReport reportAAfter = engine.investigate(TEST_GRAPH, requestA);
+        assertFalse(reportAAfter.observedFacts().matchedHistoricalIncidents().stream().anyMatch(h -> h.incidentId().equals(incidentAId)),
+                "Incident A must NEVER appear in its own historical incident list");
+
+        // 5. Print the second investigation's hypotheses and suggestedNextSteps before and after write-back
         System.out.println("\n================================================================================");
-        System.out.println("ACT 4 KNOWLEDGE EVOLUTION DEMO: SIDE-BY-SIDE MATCHED HISTORICAL INCIDENTS");
+        System.out.println("ACT 4 REALISM DEMO: SECOND INCIDENT (inc-2026-10-15-checkout-002)");
         System.out.println("================================================================================");
-        System.out.println("--- BEFORE RESOLUTION WRITE-BACK (OPEN incident excluded): ---");
-        System.out.println(objectMapper.writeValueAsString(historyBefore));
-        System.out.println("\n--- AFTER RESOLUTION WRITE-BACK (contains synthetic + user-confirmed): ---");
-        System.out.println(objectMapper.writeValueAsString(historyAfter));
+        System.out.println("--- HYPOTHESES BEFORE WRITE-BACK ---");
+        System.out.println(objectMapper.writeValueAsString(reportBBefore.hypotheses()));
+        System.out.println("\n--- SUGGESTED NEXT STEPS BEFORE WRITE-BACK (1 resolution) ---");
+        System.out.println(objectMapper.writeValueAsString(reportBBefore.suggestedNextSteps()));
+        System.out.println("\n--- HYPOTHESES AFTER WRITE-BACK ---");
+        System.out.println(objectMapper.writeValueAsString(reportBAfter.hypotheses()));
+        System.out.println("\n--- SUGGESTED NEXT STEPS AFTER WRITE-BACK (both resolutions, newest first) ---");
+        System.out.println(objectMapper.writeValueAsString(reportBAfter.suggestedNextSteps()));
         System.out.println("================================================================================\n");
     }
 

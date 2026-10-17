@@ -11,9 +11,10 @@ public record SuggestedNextStep(
         String sourceResolutionId
 ) {
     public static SuggestedNextStep fromConfirmedResolution(ResolutionRecord res) {
+        String isoDate = java.time.Instant.ofEpochMilli(res.confirmedAt()).toString();
         return new SuggestedNextStep(
                 "FROM_CONFIRMED_RESOLUTION",
-                "Consider the previously confirmed remediation " + res.id() + " (from a different incident)",
+                "Consider the previously confirmed remediation " + res.id() + " (source: " + res.source() + ", confirmed: " + isoDate + ")",
                 res.actionTaken(),
                 res.id()
         );

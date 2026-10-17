@@ -1,0 +1,8 @@
+{
+  "rootCauseServiceId": "service-payment",
+  "title": "Reverted HikariCP connection pool constraints via hotfix config deploy",
+  "remediationType": "CONFIG_CHANGE",
+  "actionTaken": "Patched ConfigMap to set maximumPoolSize=40, connectionTimeout=25000ms, and restarted payment-service pods to restore connection pool headroom.",
+  "confirmedBy": "sre-alice",
+  "triggeringDeploymentId": "dep-payment-v2.4.1"
+}
