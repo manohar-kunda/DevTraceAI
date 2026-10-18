@@ -1,0 +1,5 @@
+{
+  "incidentId": "inc-2026-10-15-checkout-002",
+  "description": "Checkout failure rates spiking again with persistent payment timeouts on card transactions",
+  "startedAt": 1792065600000
+}

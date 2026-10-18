@@ -7,12 +7,19 @@
 ---
 
 ## Pre-Recording Checklist
+## Pre-Recording Checklist
 - [ ] Docker Desktop is running and FalkorDB container is active (`docker compose ps`).
-- [ ] Database reset has been run to ensure the clean golden state (`devtrace` graph has 24 nodes, 26 relationships, and zero user-confirmed resolutions).
+- [ ] Database reset has been run to ensure the clean golden state (`devtrace` graph has 24 nodes, 26 relationships, and zero user-confirmed resolutions):
+  ```bash
+  # PowerShell:
+  $env:DEVTRACE_SEED_ENABLED="true"; $env:DEVTRACE_SEED_RESET="true"; mvn spring-boot:run
+  # Linux/macOS:
+  DEVTRACE_SEED_ENABLED=true DEVTRACE_SEED_RESET=true mvn spring-boot:run
+  ```
 - [ ] Backend is running on port 8085 (`mvn spring-boot:run`).
-- [ ] Frontend dev server is running on port 5173 (`npm run dev`).
+- [ ] Frontend dev server is running on port 5173 (`npm run dev` in `frontend/`).
 - [ ] Browser window is sized to 1080p (1920x1080) with zoom set to 100% or 110% for clear readability.
-- [ ] `DEVTRACE_API_TOKEN` is copied to clipboard or ready to type.
+- [ ] `DEVTRACE_API_TOKEN` is copied from your local `.env` and ready to paste.
 
 ---
 
@@ -25,8 +32,8 @@
 ---
 
 ## Scene 2: Loading Golden Scenario & Free-Text Resolution (0:45 – 1:30)
-- **Action**: Click **"Load Demo Golden Incident"**.
-- **Visual**: The incident description fills in: *"Checkout requests are failing after the latest deployment and payment timeouts have increased"*. Point out that **serviceHint** and **errorHint** remain completely blank.
+- **Action**: Click **"Load demo incident A (DEMO)"**.
+- **Visual**: The incident description fills in from tracked `docs/examples/create-golden-incident.json`: *"Checkout requests are failing after the latest deployment and payment timeouts have increased"*. Point out that **serviceHint** and **errorHint** remain completely blank.
 - **Action**: Click **"Investigate Incident"**.
 - **Visual**: The investigation progress finishes and the report renders instantly.
 - **Narration**:
@@ -47,14 +54,15 @@
 
 ## Scene 4: Closed-Loop Human Confirmation & Resolution Write-Back (2:30 – 3:15)
 - **Action**: Scroll down to **"2. Human-in-the-Loop Resolution Write-Back"**.
-- **Action**: Fill or verify the exact resolution fields for Incident A (`inc-2026-10-15-checkout-001`):
-  - **Root Cause Service**: `service-payment`
+- **Action**: Click the **"Fill demo resolution (DEMO)"** button.
+- **Visual**: The resolution fields populate from tracked `docs/examples/demo-resolution-a.json`:
+  - **Root Cause Service**: `service-payment` (selected from dropdown)
   - **Remediation Title**: `Emergency pool size rollback and idle timeout tune on payment datasource`
   - **Remediation Type**: `CONFIG_CHANGE`
   - **Action Taken**: `Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.`
   - **Confirmed By**: `sre-oncall-lead`
-  - **Triggering Deployment**: `dep-payment-v2.4.1`
-  - **DevTrace API Token**: Paste the token from your local `.env`.
+  - **Triggering Deployment**: blank
+- **Action**: Paste your `DEVTRACE_API_TOKEN` copied from `.env` into the password field.
 - **Action**: Click **"Confirm Resolution & Evolve Graph"**.
 - **Visual**: The green confirmation banner appears: `✔ Resolution Confirmed & Written to FalkorDB` showing resolution ID `res-inc-2026-10-15-checkout-001` with `source: user-confirmed`.
 - **Narration**:
@@ -64,10 +72,13 @@
 ---
 
 ## Scene 5: Institutional Memory in Action — Investigating Incident B (3:15 – 3:45)
-- **Action**: In the incident form at the top, enter Incident B:
+- **Action**: Scroll back up to the incident form.
+- **Action**: Click the **"Load demo incident B (Act 4) [DEMO]"** button.
+- **Visual**: Form populates with tracked `docs/examples/demo-incident-b.json`:
   - **Incident ID / Title**: `inc-2026-10-15-checkout-002`
   - **Description**: `Checkout failure rates spiking again with persistent payment timeouts on card transactions`
-  - Leave **serviceHint** and **errorHint** empty.
+  - **Started At**: `1792065600000` (Readable UTC: `2026-10-15T12:00:00.000Z`)
+  - Hints remain empty.
 - **Action**: Click **"Investigate Incident"**.
 - **Visual**: In Section B (Observed Facts / Matched Historical Incidents), observe that **both** resolutions are now returned in recency order:
   1. `inc-2026-10-15-checkout-001` with resolution `res-inc-2026-10-15-checkout-001` (`source: user-confirmed`): *"Emergency pool size rollback and idle timeout tune on payment datasource"*

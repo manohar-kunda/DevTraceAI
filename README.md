@@ -188,13 +188,16 @@ cp .env.example .env
 # On Windows (cmd / PowerShell):
 copy .env.example .env
 ```
-Edit `.env` and configure:
+Edit `.env` and configure with your own generated secrets:
+> [!IMPORTANT]
+> Generate your own random `DEVTRACE_API_TOKEN` and `FALKORDB_PASSWORD` (e.g., using `openssl rand -hex 24` or PowerShell `[Convert]::ToHexString((1..32 | % { Get-Random -Max 256 }))`). Never reuse example strings, and never commit `.env` to version control.
+
 ```env
 FALKORDB_HOST=127.0.0.1
 FALKORDB_PORT=6379
-FALKORDB_PASSWORD=your_secure_password_here
+FALKORDB_PASSWORD=your_secure_random_password_here
 FALKORDB_GRAPH=devtrace
-DEVTRACE_API_TOKEN=your_secure_api_token_here
+DEVTRACE_API_TOKEN=your_secure_random_api_token_here
 ```
 
 ### 2. Start FalkorDB

@@ -29,8 +29,8 @@ export default function App() {
   const [resolutionResult, setResolutionResult] = useState(null);
   const [resolving, setResolving] = useState(false);
 
-  // Load Golden Demo Incident
-  const handleLoadDemo = async () => {
+  // Load Demo Incident A (Golden Scenario)
+  const handleLoadDemoA = async () => {
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/api/demo/golden-incident`);
@@ -51,6 +51,26 @@ export default function App() {
         status: 500,
       });
     }
+  };
+
+  // Load Demo Incident B (Act 4)
+  const handleLoadDemoB = () => {
+    setError(null);
+    setIncidentId('inc-2026-10-15-checkout-002');
+    setDescription('Checkout failure rates spiking again with persistent payment timeouts on card transactions');
+    setStartedAt('1792065600000');
+    setServiceHint('');
+    setErrorHint('');
+  };
+
+  // Fill Demo Resolution (Act 4 distinct values)
+  const handleFillDemoResolution = () => {
+    setRootCauseServiceId('service-payment');
+    setResolutionTitle('Emergency pool size rollback and idle timeout tune on payment datasource');
+    setRemediationType('CONFIG_CHANGE');
+    setActionTaken('Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.');
+    setConfirmedBy('sre-oncall-lead');
+    setTriggeringDeploymentId('');
   };
 
   // Submit Incident & Investigate
@@ -116,20 +136,19 @@ export default function App() {
 
       setReport(invData);
 
-      // Pre-fill resolution form defaults based on top hypothesis if available
+      // Default root-cause service to top hypothesis, but keep all other fields blank with greyed placeholders
       if (invData.hypotheses && invData.hypotheses.length > 0) {
-        const top = invData.hypotheses[0];
-        setRootCauseServiceId(top.serviceId || '');
-        if (top.confirmedResolution) {
-          setResolutionTitle(top.confirmedResolution.title || '');
-          setRemediationType(top.confirmedResolution.remediationType || 'CONFIG_CHANGE');
-          setActionTaken(top.confirmedResolution.actionTaken || '');
-        } else {
-          setResolutionTitle(`Remediate ${top.serviceName || top.serviceId}`);
-          setActionTaken('');
-        }
+        setRootCauseServiceId(invData.hypotheses[0].serviceId || '');
+      } else if (invData.otherServicesInNeighborhood && invData.otherServicesInNeighborhood.length > 0) {
+        setRootCauseServiceId(invData.otherServicesInNeighborhood[0].id || '');
+      } else {
+        setRootCauseServiceId('');
       }
-      setConfirmedBy('sre-oncall');
+      setResolutionTitle('');
+      setRemediationType('CONFIG_CHANGE');
+      setActionTaken('');
+      setConfirmedBy('');
+      setTriggeringDeploymentId('');
     } catch (err) {
       setError({
         title: err.title || 'Error',
@@ -208,6 +227,36 @@ export default function App() {
       setResolving(false);
     }
   };
+
+  // Candidate services for resolution select: hypotheses + neighborhood
+  const candidateServices = [];
+  const seenServiceIds = new Set();
+
+  if (report?.hypotheses) {
+    for (const h of report.hypotheses) {
+      if (h.serviceId && !seenServiceIds.has(h.serviceId)) {
+        seenServiceIds.add(h.serviceId);
+        candidateServices.push({
+          id: h.serviceId,
+          name: h.serviceName || h.serviceId,
+          group: `Hypothesis #${h.rank} (${h.tier} TIER)`,
+        });
+      }
+    }
+  }
+
+  if (report?.otherServicesInNeighborhood) {
+    for (const s of report.otherServicesInNeighborhood) {
+      if (s.id && !seenServiceIds.has(s.id)) {
+        seenServiceIds.add(s.id);
+        candidateServices.push({
+          id: s.id,
+          name: s.name || s.id,
+          group: `Neighborhood (${s.hops} ${s.hops === 1 ? 'hop' : 'hops'})`,
+        });
+      }
+    }
+  }
 
   return (
     <div className="app-container">
@@ -295,7 +344,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="form-group" style={{ maxWidth: '300px' }}>
+            <div className="form-group" style={{ maxWidth: '380px' }}>
               <label htmlFor="startedAt">Started At Epoch ms (Optional)</label>
               <input
                 id="startedAt"
@@ -304,6 +353,11 @@ export default function App() {
                 onChange={(e) => setStartedAt(e.target.value)}
                 placeholder="1792058400000"
               />
+              {startedAt && !isNaN(Number(startedAt)) && Number(startedAt) > 0 && (
+                <span style={{ fontSize: '12px', color: '#2563eb', display: 'block', marginTop: '4px' }}>
+                  Readable UTC: <code>{new Date(Number(startedAt)).toISOString()}</code>
+                </span>
+              )}
             </div>
           </div>
 
@@ -311,10 +365,18 @@ export default function App() {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={handleLoadDemo}
+              onClick={handleLoadDemoA}
               disabled={loading}
             >
-              Load Demo Golden Incident
+              Load demo incident A (DEMO)
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleLoadDemoB}
+              disabled={loading}
+            >
+              Load demo incident B (Act 4) [DEMO]
             </button>
             <button
               type="submit"
@@ -352,20 +414,35 @@ export default function App() {
             <div className="kv-item">
               <span className="kv-label">Symptom Service</span>
               <span className="kv-value">
-                {report.entryPoints?.service?.serviceName} ({report.entryPoints?.service?.serviceId})
+                {report.entryPoints?.service?.serviceName || 'Unknown'} ({report.entryPoints?.service?.serviceId || 'None'})
               </span>
-              <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                {report.entryPoints?.service?.evidence?.explanation}
-              </span>
+              <div style={{ fontSize: '12px', color: '#1e293b', marginTop: '6px' }}>
+                <strong>Matched Phrase:</strong> <code>'{report.entryPoints?.service?.evidence?.matchedToken || 'N/A'}'</code> | <strong>Match Source:</strong> <code>{report.entryPoints?.service?.evidence?.matchSource || 'N/A'}</code>
+              </div>
+              {report.entryPoints?.service?.evidence?.explanation && (
+                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  {report.entryPoints?.service?.evidence?.explanation}
+                </span>
+              )}
             </div>
             <div className="kv-item">
               <span className="kv-label">Matched Error Signature</span>
               <span className="kv-value">
-                {report.entryPoints?.errorSignature?.errorType} ({report.entryPoints?.errorSignature?.signatureId})
+                {report.entryPoints?.errorSignature?.errorType || 'Unknown'} ({report.entryPoints?.errorSignature?.signatureId || 'None'})
               </span>
-              <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                {report.entryPoints?.errorSignature?.pattern}
-              </span>
+              <div style={{ fontSize: '12px', color: '#1e293b', marginTop: '6px' }}>
+                <strong>Matched Phrase:</strong> <code>'{report.entryPoints?.errorSignature?.evidence?.matchedToken || 'N/A'}'</code> | <strong>Match Source:</strong> <code>{report.entryPoints?.errorSignature?.evidence?.matchSource || 'N/A'}</code>
+              </div>
+              {report.entryPoints?.errorSignature?.pattern && (
+                <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
+                  <strong>Pattern:</strong> <code>{report.entryPoints?.errorSignature?.pattern}</code>
+                </div>
+              )}
+              {report.entryPoints?.errorSignature?.evidence?.explanation && (
+                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  {report.entryPoints?.errorSignature?.evidence?.explanation}
+                </span>
+              )}
             </div>
           </div>
 
@@ -427,7 +504,7 @@ export default function App() {
                   </p>
 
                   <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                    Topology Distance: <strong>{h.hopDistance} hops</strong> | Most Recent Change: <strong>{new Date(h.mostRecentChangeTimestamp).toISOString()}</strong>
+                    Topology Distance: <strong>{h.hopDistance} {h.hopDistance === 1 ? 'hop' : 'hops'}</strong> | Most Recent Change: <strong>{new Date(h.mostRecentChangeTimestamp).toISOString()}</strong>
                   </div>
 
                   {h.evidence && h.evidence.length > 0 && (
@@ -455,7 +532,7 @@ export default function App() {
               </p>
               {Object.entries(report.graphRelationships.pathsToCandidates).map(([svc, p]) => (
                 <div key={svc} className="path-box">
-                  {p.serviceIds.join(' ──[:DEPENDS_ON]──► ')} ({p.hopCount} hops)
+                  {p.serviceIds.join(' ──[:DEPENDS_ON]──► ')} ({p.hopCount} {p.hopCount === 1 ? 'hop' : 'hops'})
                 </div>
               ))}
             </div>
@@ -472,7 +549,7 @@ export default function App() {
                 ))}
                 {report.graphRelationships.blastRadius.indirectDependents?.map((d) => (
                   <span key={d.serviceId} className="tag" style={{ borderLeft: '3px solid #94a3b8' }}>
-                    {d.serviceName} ({d.hops} hops)
+                    {d.serviceName} ({d.hops} {d.hops === 1 ? 'hop' : 'hops'})
                   </span>
                 ))}
               </div>
@@ -488,7 +565,7 @@ export default function App() {
               <div className="tag-group" style={{ marginTop: '10px' }}>
                 {report.otherServicesInNeighborhood.map((s) => (
                   <span key={s.id} className="tag">
-                    {s.name} ({s.id}, {s.hops} hops)
+                    {s.name} ({s.id}, {s.hops} {s.hops === 1 ? 'hop' : 'hops'})
                   </span>
                 ))}
               </div>
@@ -539,23 +616,45 @@ export default function App() {
       {/* Confirmation & Write-Back Form */}
       {report && (
         <section className="card">
-          <h2 className="card-title">2. Human-in-the-Loop Resolution Write-Back</h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-            Confirming this resolution atomically writes a <code>Resolution</code> node with <code>source='user-confirmed'</code> into FalkorDB and links it via <code>[:RESOLVES]</code> and <code>[:ADDRESSES]</code>, evolving the knowledge graph for future investigations.
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+            <div>
+              <h2 className="card-title" style={{ marginBottom: '4px' }}>2. Human-in-the-Loop Resolution Write-Back</h2>
+              <p style={{ fontSize: '13px', color: '#64748b' }}>
+                Confirming this resolution atomically writes a <code>Resolution</code> node with <code>source='user-confirmed'</code> into FalkorDB and links it via <code>[:RESOLVES]</code> and <code>[:ADDRESSES]</code>, evolving the knowledge graph for future investigations.
+              </p>
+            </div>
+            <div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleFillDemoResolution}
+                style={{ fontSize: '13px', padding: '6px 14px' }}
+              >
+                Fill demo resolution (DEMO)
+              </button>
+            </div>
+          </div>
 
           <form onSubmit={handleConfirmResolution}>
             <div className="form-grid">
               <div className="form-row-hints">
                 <div className="form-group">
-                  <label htmlFor="rootCauseServiceId">Root Cause Service ID *</label>
-                  <input
+                  <label htmlFor="rootCauseServiceId">Root Cause Service *</label>
+                  <select
                     id="rootCauseServiceId"
-                    type="text"
                     value={rootCauseServiceId}
                     onChange={(e) => setRootCauseServiceId(e.target.value)}
                     required
-                  />
+                  >
+                    {candidateServices.length === 0 && (
+                      <option value="">Select candidate service</option>
+                    )}
+                    {candidateServices.map((svc) => (
+                      <option key={svc.id} value={svc.id}>
+                        {svc.name} ({svc.id}) — {svc.group}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">
@@ -581,6 +680,7 @@ export default function App() {
                     type="text"
                     value={confirmedBy}
                     onChange={(e) => setConfirmedBy(e.target.value)}
+                    placeholder="e.g. sre-oncall-lead"
                     required
                   />
                 </div>
@@ -593,7 +693,7 @@ export default function App() {
                   type="text"
                   value={resolutionTitle}
                   onChange={(e) => setResolutionTitle(e.target.value)}
-                  placeholder="e.g. Reverted HikariCP connection pool constraints via hotfix config deploy"
+                  placeholder="e.g. Emergency pool size rollback and idle timeout tune on payment datasource"
                   required
                 />
               </div>
@@ -605,7 +705,7 @@ export default function App() {
                   rows="2"
                   value={actionTaken}
                   onChange={(e) => setActionTaken(e.target.value)}
-                  placeholder="Detailed notes of configuration changes, pool adjustments, or rollback commands executed"
+                  placeholder="Detailed notes of configuration changes, pool adjustments, or rollback commands executed (e.g. Restored HikariCP maximumPoolSize from 10 back to 50...)"
                   required
                 />
               </div>
@@ -618,7 +718,7 @@ export default function App() {
                     type="text"
                     value={triggeringDeploymentId}
                     onChange={(e) => setTriggeringDeploymentId(e.target.value)}
-                    placeholder="e.g. dep-payment-v2.4.1"
+                    placeholder="e.g. dep-payment-v2.4.1 (optional)"
                   />
                 </div>
 
@@ -627,6 +727,7 @@ export default function App() {
                   <input
                     id="token"
                     type="password"
+                    autoComplete="off"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
                     placeholder="Enter DEVTRACE_API_TOKEN"
