@@ -17,6 +17,7 @@ target/
 .settings/
 .project
 .classpath
+.metadata/
 
 # OS generated files
 Thumbs.db
