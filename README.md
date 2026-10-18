@@ -428,12 +428,12 @@ DevTrace AI is designed with clean abstraction boundaries (`GraphRepository`, `I
 In accordance with hackathon guidelines, the development of DevTrace AI utilized AI pair programming assistance:
 
 - **AI Tools & Models Used**:
-  - Tool / Assistant: `[INSERT TOOLS USED: e.g. Google Antigravity / Gemini 2.5 Pro / Claude 3.7 Sonnet]`
-  - Models: `[INSERT SPECIFIC MODEL IDENTIFIERS]`
+  - Tool / Assistant: Google Antigravity 
+  - Models: `Gemini 3.8 flash`
 
 - **My Contribution (Human Decisions and Verification)**:
-  - `[INSERT YOUR CONTRIBUTIONS: Architecture decisions, schema design, test verification, operational requirements, etc.]`
-  - `[INSERT SPECIFIC VERIFICATION PERFORMED: manual review of Cypher traversal queries, verification of UI behavior in browser, validation of ranking tiers, etc.]`
+  - `Architecture decisions, schema design, test verification`
+  - `manual review of Cypher traversal queries, verification of UI behavior in browser, validation of ranking tiers.`
 
 - **Human Engineering & Architecture**:
   - Designed the FalkorDB graph schema, bidirectional relationship semantics, and constraint models.
