@@ -1,0 +1,47 @@
+services:
+  # 1. Backend Web Service (Docker container)
+  - type: web
+    name: devtrace-api
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: deploy
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: SERVER_PORT
+        value: "8085"
+      - key: FALKORDB_HOST
+        sync: false
+      - key: FALKORDB_PORT
+        sync: false
+      - key: FALKORDB_PASSWORD
+        sync: false
+      - key: FALKORDB_GRAPH
+        value: "devtrace"
+      - key: DEVTRACE_FALKORDB_GRAPH
+        value: "devtrace"
+      - key: DEVTRACE_API_TOKEN
+        sync: false
+      - key: DEVTRACE_CORS_ALLOWED_ORIGIN
+        sync: false
+      - key: DEVTRACE_SEED_ENABLED
+        value: "true"
+      - key: DEVTRACE_SEED_RESET
+        value: "false"
+
+  # 2. Frontend Static Site
+  - type: web
+    name: devtrace-ui
+    runtime: static
+    branch: deploy
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
