@@ -36,7 +36,6 @@ services:
     name: devtrace-ui
     runtime: static
     plan: free
-    region: oregon
     branch: deploy
     buildCommand: cd frontend && npm ci && npm run build
     staticPublishPath: frontend/dist
