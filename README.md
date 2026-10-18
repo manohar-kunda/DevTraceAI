@@ -228,10 +228,10 @@ Engine diagnostics are strictly read-only. Knowledge graph evolution occurs only
 ## 7. Setup & Execution Guide
 
 ### Prerequisites
-- **Java**: JDK 25 LTS (verified with OpenJDK 25.0.4.1)
-- **Maven**: 3.9+ (verified with Apache Maven 3.9.16)
+- **Java**: Minimum Java 25 LTS (tested and verified with OpenJDK `25.0.4.1`)
+- **Maven**: 3.9+ (tested and verified with Apache Maven `3.9.16`)
 - **Docker**: Docker Desktop with Compose v2
-- **Node.js**: v20+ or v24+ with npm (verified with Node v24.21.0, npm 11.19.0)
+- **Node.js**: Minimum Node.js 20+ required for the native `node --test` regression suite (tested and verified with Node `v24.21.0`, npm `11.19.0`)
 
 ### 1. Environment Configuration
 Copy `.env.example` to `.env` and set your credentials:
@@ -350,6 +350,9 @@ To evaluate engine responsiveness and thread safety under concurrent load on a s
   - **Conflict Rejection**: Exactly 1 winning request commits (HTTP 201 Created); the remaining 9 concurrent conflicting payloads are safely rejected with HTTP 409 Conflict.
   - **Graph Integrity**: Exactly 1 `Resolution` node remains stored; subsequent calls cannot overwrite a confirmed resolution with conflicting data.
 
+> [!NOTE]
+> **Single-Instance Synchronization Boundary**: The `synchronized` keyword on `confirmResolution` in `DefaultIncidentService` serializes resolution confirmation requests within **one running backend JVM process only**. The database-level backstop preventing duplicate resolutions is FalkorDB's unique schema constraint on `Resolution.id` (`res-<incidentId>`). If multiple horizontal backend instances are deployed behind a load balancer, multi-instance concurrency safety would require an atomic Cypher write condition or a distributed lock; this is recorded as future work.
+
 ---
 
 ## 9. Demo Walkthrough of the Golden Scenario
@@ -402,8 +405,10 @@ DevTrace AI is designed with clean abstraction boundaries (`GraphRepository`, `I
 3. **Dynamic Topology Updates**: The FalkorDB graph accepts dynamic node creation and relationship modifications at runtime via Cypher without requiring server restarts or schema changes.
 4. **Client-Side Resilience**: Frontend requests incorporate a 15-second `AbortController` timeout, in-flight double-submit guards, and request-id sequence matching to discard out-of-order or stale network responses.
 
-### Production Ingestion Architecture (Future Work Sketch)
-To connect DevTrace AI directly to enterprise production environments, lightweight event ingestors can populate the FalkorDB schema in real time:
+### Production Ingestion Architecture (Future Work Sketch — Not Implemented Today)
+
+> [!IMPORTANT]
+> **No External Connectors Are Implemented in the Current Codebase**: The connectors below (OpenTelemetry, Jaeger, Datadog, GitHub Actions, ArgoCD, PagerDuty, Opsgenie, Jira, etc.) are **future work architectural sketches only**. DevTrace AI does **not** ship with pre-built ingestion connectors for these third-party platforms. Ingestion today is performed via direct REST calls (`/api/incidents`) or Cypher graph mutations.
 
 - **Service Mesh & APM Ingestion (OpenTelemetry / Jaeger / Datadog)**:
   - Stream span dependency graphs into FalkorDB `(Service)-[:DEPENDS_ON]->(Service)` edges.
@@ -445,4 +450,5 @@ In accordance with hackathon guidelines, the development of DevTrace AI utilized
 - **Synthetic Data**: All microservices, team names, alert summaries, git versions, deployments, and incident timestamps in this repository are **100% synthetic**. No real company, production telemetry, or customer data is used.
 - **Deterministic Heuristic**: DevTrace AI uses deterministic topological analysis and recency rules. It does not output uncalibrated probabilistic machine-learning guesses.
 - **Human Verification Required**: Destructive remediations (rollbacks, restarts, config patches) require human SRE authorization before execution.
+- **Server Socket Read Timeout (Known Limitation)**: The JFalkorDB driver's default socket (read) timeout is `0` (indefinite read wait), meaning the backend currently has no server-side query timeout configured on its FalkorDB connection. The frontend protects users by enforcing a 15-second client-side `AbortController` timeout on all network requests; configuring a non-zero server-side socket timeout via `FalkorDB.builder().socketTimeout(...)` is future work.
 - **MCP Integration Status**: Model Context Protocol (MCP) server integration is architected and documented as future work. The current product operates deterministically via REST and direct FalkorDB graph traversal.
