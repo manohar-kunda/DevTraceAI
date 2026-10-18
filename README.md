@@ -57,6 +57,60 @@ flowchart TD
     REPO -->|Binary Redis Protocol| DB
 ```
 
+### Frontend Architecture (Single Page Application)
+
+The frontend is a modular React 19 single-page application built with Vite and plain CSS (zero external UI kits or third-party routers):
+
+```
+frontend/src/
+├── api/
+│   ├── client.js              # Sanitized fetch wrapper with RFC 7807 problem details
+│   └── endpoints.js           # Investigation, demo, resolution, and health API bindings
+├── components/
+│   ├── common/
+│   │   ├── Badge.jsx          # Tier (STRONG/MODERATE) & provenance (user/synthetic) badges
+│   │   ├── DemoGuide.jsx      # 4-step guided walk-through progress panel
+│   │   ├── ErrorBanner.jsx    # Accessible RFC 7807 alert with role="alert"
+│   │   ├── FieldHelp.jsx      # Form input help text
+│   │   ├── Glossary.jsx       # Collapsible plain-English term glossary
+│   │   └── Section.jsx        # Semantic cards & details/summary accordion wrappers
+│   ├── incident/
+│   │   ├── AdvancedOptions.jsx # Collapsible service/error hints, ID, and epoch preview
+│   │   ├── DemoButtons.jsx    # Clearly labeled DEMO scenario loaders
+│   │   └── IncidentForm.jsx   # Free-text symptom input form
+│   ├── report/
+│   │   ├── BlastRadius.jsx    # Upstream affected caller tags
+│   │   ├── DependencyChain.jsx # Visual box-and-arrow call path
+│   │   ├── EntryPoints.jsx    # Section A resolved service & error signature
+│   │   ├── EvidenceList.jsx   # Deployments in temporal analysis window
+│   │   ├── HistoryList.jsx    # Section B matched historical incidents & provenances
+│   │   ├── HypothesisCard.jsx # Plain-language root cause explanation
+│   │   ├── IgnoredChanges.jsx # Deployments outside dependency neighborhood
+│   │   ├── Limitations.jsx    # Reasoning boundaries and assumptions
+│   │   ├── NextSteps.jsx      # Suggested operational triage actions
+│   │   └── ReportSummary.jsx  # Hero summary card with lead suspect & tier
+│   └── resolution/
+│       ├── ConfirmationBanner.jsx # Graph evolution feedback & demo B trigger
+│       ├── ResolutionForm.jsx # Human confirmation form with candidate select
+│       └── TokenField.jsx     # In-memory masked token input with 5-step help
+├── demo/
+│   └── demoData.js            # Synthetic demo fixtures (Incident B, Demo Resolution)
+├── hooks/
+│   ├── useHashRoute.js        # 20-line hash router for back/forward navigation
+│   └── useInvestigation.js    # State machine: idle, loading, success, error
+├── pages/
+│   ├── DescribePage.jsx       # Step 1: Incident description and demo loader
+│   ├── ResultPage.jsx         # Step 2: Investigation findings & accordion details
+│   └── ConfirmPage.jsx        # Step 3: Human confirmation & knowledge write-back
+├── styles/
+│   ├── components.css         # Responsive styles, stepper, accessible focus, reduced motion
+│   └── variables.css          # Design tokens (colors, WCAG AA contrast, radii, spacing)
+├── utils/
+│   └── format.js              # UTC formatting, relative time, pluralization, candidate extraction
+├── App.jsx                    # Layout, header with health pill, and stepper navigation (145 lines)
+└── main.jsx                   # React entry point
+```
+
 ---
 
 ## 4. Graph Data Model
@@ -280,26 +334,38 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## 8. Demo Walkthrough of the Golden Scenario
 
-1. Open [http://localhost:5173](http://localhost:5173). Notice the **`● Synthetic Demo Data`** pill.
-2. Click **"Load demo incident A (DEMO)"**:
-   - Pre-fills incident description: `"Checkout requests are failing after the latest deployment and payment timeouts have increased"`.
-   - Leaves service and error hints blank, demonstrating the **free-text keyword resolver**.
-3. Click **"Investigate Incident"**:
-   - **Resolved Entry Points**: Resolves symptom service `checkout-service` and error signature `err-sig-payment-pool-timeout`.
-   - **Observed Facts**: Displays recent deployments on `inventory-service` (10m before) and `payment-service` (30m before), plus historical incident `inc-2026-08-12-pay`.
-   - **Ranked Hypotheses**:
-     - `#1 payment-service` (**STRONG TIER**): Has recent deployment `v2.4.1` and historical incident with confirmed remediation `res-pay-timeout-fix`.
-     - `#2 inventory-service` (**MODERATE TIER**): Has recent deployment `v1.5.0`, but zero error signature matches.
-   - **Topological Paths**: Displays `service-checkout ──[:DEPENDS_ON]──► service-order ──[:DEPENDS_ON]──► service-payment` (2 hops).
-   - **Ignored Changes**: `dep-notification-v1.8.0` is ignored because `notification-service` is outside the dependency neighborhood.
-4. **Human-in-the-Loop Confirmation**:
-   - Click **"Fill demo resolution (DEMO)"** (or select root cause `service-payment` and fill remediation details).
-   - Paste your `DEVTRACE_API_TOKEN` value into the masked token field.
-   - Click **"Confirm Resolution & Evolve Graph"**.
-   - Verified: Green confirmation banner appears with new resolution ID `res-inc-2026-10-15-checkout-001` marked `source: user-confirmed`.
+1. Open [http://localhost:5173](http://localhost:5173). Notice the **`● Synthetic Demo Data`** pill and **`Backend: connected`** health status.
+2. **Step 1 — Describe Incident**:
+   - Click **"Load demo incident A (DEMO)"**.
+   - Pre-fills symptom description: `"Checkout requests are failing after the latest deployment and payment timeouts have increased"`.
+   - Advanced options (hints, ID, epoch) remain collapsed and blank, demonstrating the **free-text keyword resolver**.
+   - Click **"Investigate Incident"**.
+3. **Step 2 — Result**:
+   - The UI automatically navigates to **`#/result`** with focus moved to the findings.
+   - **Lead Suspect**: Highlights `#1 payment-service` (**STRONG TIER**) with recent deployment `v2.4.1` (30m before) and matched historical incident.
+   - **Why we think so**: Accordion shows Section A (resolved `checkout-service` and error signature `err-sig-payment-pool-timeout`), Section B deployments, and past incident remediation.
+   - **Dependency Chain**: Visual box-and-arrow chain traces `service-checkout ──calls──► service-order ──calls──► service-payment` (2 calls away from failing service).
+   - Click **"Confirm Root Cause & Fix ➔"** to proceed to Step 3.
+4. **Step 3 — Confirm Fix (Human Review)**:
+   - Heading displays: `"Confirm the fix (human review)"` with `"You are confirming a fix for incident inc-2026-10-15-checkout-001"`.
+   - Click **"Fill demo resolution (DEMO)"** (pre-fills `service-payment`, `CONFIG_CHANGE`, distinct action taken notes, and `sre-oncall-lead`).
+   - Paste your `DEVTRACE_API_TOKEN` value into the masked field (the 5-step collapsible helper explains where to find it).
+   - Click **"Save confirmed fix"**.
+   - Verified: Green confirmation banner appears with resolution ID `res-inc-2026-10-15-checkout-001` marked `source: user-confirmed`, explaining the exact FalkorDB graph updates made.
 5. **Act 4 Verification (Institutional Memory)**:
-   - Click **"Load demo incident B (Act 4) [DEMO]"** and click **"Investigate Incident"**.
+   - Click **"Next: try similar incident B"** (or click **"Load demo incident B (Act 4) [DEMO]"** on Step 1).
+   - Click **"Investigate Incident"**.
    - DevTrace AI immediately surfaces the newly confirmed remediation from incident A in Section B as verified historical evidence.
+
+---
+
+### UI Walkthrough Screenshots
+
+| Step 1: Describe | Step 2: Investigation Result | Step 3: Confirm Fix |
+|---|---|---|
+| ![Step 1 Describe](docs/screenshots/step1-describe.png) | ![Step 2 Result](docs/screenshots/step2-result.png) | ![Step 3 Confirm](docs/screenshots/step3-confirm.png) |
+
+*(Screenshots can be captured at [http://localhost:5173](http://localhost:5173) in desktop or mobile viewport down to 390px).*
 
 For exact step-by-step recording instructions, see [docs/DEMO_SCRIPT.md](file:///C:/Users/manoh/DevTraceAI/docs/DEMO_SCRIPT.md).
 

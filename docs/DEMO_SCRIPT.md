@@ -31,55 +31,62 @@
 ---
 
 ## Scene 2: Loading Golden Scenario & Free-Text Resolution (0:45 – 1:30)
+- **Visual**: Step 1 (**Describe**) is active on the navigation stepper.
 - **Action**: Click **"Load demo incident A (DEMO)"**.
-- **Visual**: The incident description fills in from tracked `docs/examples/create-golden-incident.json`: *"Checkout requests are failing after the latest deployment and payment timeouts have increased"*. Point out that **serviceHint** and **errorHint** remain completely blank.
+- **Visual**: The incident description fills in: *"Checkout requests are failing after the latest deployment and payment timeouts have increased"*. Advanced options (hints, ID, epoch) remain collapsed and empty.
 - **Action**: Click **"Investigate Incident"**.
-- **Visual**: The investigation progress finishes and the report renders instantly.
+- **Visual**: The app automatically navigates to Step 2 (**Result**). Focus shifts to the findings header.
 - **Narration**:
   > "Notice that we provided zero manual hints. Our entry point resolver analyzes the raw alert text against the FalkorDB catalog and resolves `checkout-service` as the symptom entry point and `err-sig-payment-pool-timeout` as the matched error signature."
 
 ---
 
 ## Scene 3: Explainable Root-Cause Ranking & Graph Path (1:30 – 2:30)
-- **Action**: Scroll smoothly through **Section B (Observed Facts)**, **Section C (Ranked Hypotheses)**, and **Section D (Failure Propagation Path)**.
-- **Visual**: Highlight the `#1 payment-service` (**STRONG TIER**) and `#2 inventory-service` (**MODERATE TIER**).
+- **Visual**: On Step 2 (**Result**), point out the top **Most Likely Cause** lead card:
+  - Top suspect: `#1 payment-service` (**STRONG TIER**)
+  - Plain English explanation: *"Recent deployment change on this service AND historical match for this error signature."*
+  - Recent change: `dep-payment-v2.4.1` (30m before incident)
+  - Seen before: past incident with confirmed fix
+- **Action**: Expand/highlight the open accordions:
+  - **Why we think so**: Deployments in window and historical incident match.
+  - **Dependency chain & blast radius**: Visual box-and-arrow call path showing `service-checkout ──calls──► service-order ──calls──► service-payment` (2 calls away from failing service).
+- **Action**: Click **"Confirm Root Cause & Fix ➔"** (or click tab 3 **Confirm fix**).
 - **Narration**:
   > "DevTrace AI evaluates the topological neighborhood downstream from checkout. 
-  > Notice the ranking: `inventory-service` deployed 10 minutes ago, but it has no error signature matches, placing it in the MODERATE tier. 
-  > `payment-service` deployed 30 minutes ago, but it matched a historical incident where connection pool timeouts occurred, placing it as our #1 STRONG candidate.
-  > In Section D, FalkorDB traces the exact 2-hop directed dependency path: checkout depends on order, which depends on payment. The failure propagated upstream in reverse."
+  > Notice the ranking: `payment-service` deployed 30 minutes ago and matched a historical incident with connection pool timeouts, placing it as our #1 STRONG candidate.
+  > FalkorDB traces the exact 2-hop directed dependency path: checkout calls order, which calls payment. The failure propagated upstream in reverse."
 
 ---
 
 ## Scene 4: Closed-Loop Human Confirmation & Resolution Write-Back (2:30 – 3:15)
-- **Action**: Scroll down to **"2. Human-in-the-Loop Resolution Write-Back"**.
+- **Visual**: Step 3 (**Confirm fix**) is active. Heading states: *"Confirm the fix (human review)"* with *"You are confirming a fix for incident inc-2026-10-15-checkout-001"*.
 - **Action**: Click the **"Fill demo resolution (DEMO)"** button.
-- **Visual**: The resolution fields populate from tracked `docs/examples/demo-resolution-a.json`:
-  - **Root Cause Service**: `service-payment` (selected from dropdown)
-  - **Remediation Title**: `Emergency pool size rollback and idle timeout tune on payment datasource`
-  - **Remediation Type**: `CONFIG_CHANGE`
-  - **Action Taken**: `Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.`
-  - **Confirmed By**: `sre-oncall-lead`
-  - **Triggering Deployment**: blank
-- **Action**: Paste your `DEVTRACE_API_TOKEN` (copied previously to clipboard) into the masked **DevTrace API Token** field (never open `.env` on camera).
-- **Action**: Click **"Confirm Resolution & Evolve Graph"**.
-- **Visual**: The green confirmation banner appears: `✔ Resolution Confirmed & Written to FalkorDB` showing resolution ID `res-inc-2026-10-15-checkout-001` with `source: user-confirmed`.
+- **Visual**: The resolution fields populate:
+  - **Which service was the real cause?**: `service-payment` (selected from dropdown)
+  - **What kind of fix?**: `CONFIG_CHANGE`
+  - **Your name or team**: `sre-oncall-lead`
+  - **Short title**: `Emergency pool size rollback and idle timeout tune on payment datasource`
+  - **What exactly was done?**: `Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.`
+  - **Related deployment**: blank
+- **Action**: Paste your `DEVTRACE_API_TOKEN` (copied previously to clipboard) into the masked **API token** field (never open `.env` on camera; point out the 5-step collapsible helper if desired).
+- **Action**: Click **"Save confirmed fix"**.
+- **Visual**: Focus shifts to the green confirmation banner:
+  - `✔ Resolution Confirmed & Written to FalkorDB` showing resolution ID `res-inc-2026-10-15-checkout-001` with `source: user-confirmed`.
+  - Explains what changed in the knowledge graph: new `Resolution` node, linked via `[:RESOLVES]` and `[:ADDRESSES]`.
 - **Narration**:
   > "Investigation engines should never persist speculative hypotheses. DevTrace AI requires an authenticated human SRE to confirm the actual fix.
-  > Clicking Confirm executes an atomic Cypher write-back transaction in FalkorDB. It marks incident A RESOLVED, links the resolution to the payment service, and tags it with 'user-confirmed' provenance."
+  > Clicking 'Save confirmed fix' executes an atomic Cypher write-back transaction in FalkorDB. It marks incident A RESOLVED, links the resolution to the payment service, and tags it with 'user-confirmed' provenance."
 
 ---
 
 ## Scene 5: Institutional Memory in Action — Investigating Incident B (3:15 – 3:45)
-- **Action**: Scroll back up to the incident form.
-- **Action**: Click the **"Load demo incident B (Act 4) [DEMO]"** button.
-- **Visual**: Form populates with tracked `docs/examples/demo-incident-b.json`:
+- **Action**: Click the **"Next: try similar incident B"** button directly on the confirmation banner.
+- **Visual**: The app returns to Step 1 (**Describe**) with incident B pre-filled:
   - **Incident ID / Title**: `inc-2026-10-15-checkout-002`
-  - **Description**: `Checkout failure rates spiking again with persistent payment timeouts on card transactions`
+  - **What is going wrong?**: `Checkout failure rates spiking again with persistent payment timeouts on card transactions`
   - **Started At**: `1792065600000` (Readable UTC: `2026-10-15T12:00:00.000Z`)
-  - Hints remain empty.
 - **Action**: Click **"Investigate Incident"**.
-- **Visual**: In Section B (Observed Facts / Matched Historical Incidents), observe that **both** resolutions are now returned in recency order:
+- **Visual**: On Step 2 (**Result**), open "Why we think so" -> Matched Historical Incidents. Observe that **both** resolutions are now returned in recency order:
   1. `inc-2026-10-15-checkout-001` with resolution `res-inc-2026-10-15-checkout-001` (`source: user-confirmed`): *"Emergency pool size rollback and idle timeout tune on payment datasource"*
   2. `inc-2026-08-12-pay` with resolution `res-pay-timeout-fix` (`source: synthetic`): *"Increase HikariCP pool size and connection timeout"*
 - **Narration**:
