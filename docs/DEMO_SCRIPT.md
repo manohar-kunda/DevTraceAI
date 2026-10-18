@@ -45,13 +45,35 @@
 
 ---
 
-## Scene 4: Closed-Loop Human Confirmation & Graph Evolution (2:30 – 3:30)
+## Scene 4: Closed-Loop Human Confirmation & Resolution Write-Back (2:30 – 3:15)
 - **Action**: Scroll down to **"2. Human-in-the-Loop Resolution Write-Back"**.
-- **Action**: Point out that the form auto-populated the recommended root cause (`service-payment`) and remediation notes. Enter the `DEVTRACE_API_TOKEN` in the password field.
+- **Action**: Fill or verify the exact resolution fields for Incident A (`inc-2026-10-15-checkout-001`):
+  - **Root Cause Service**: `service-payment`
+  - **Remediation Title**: `Emergency pool size rollback and idle timeout tune on payment datasource`
+  - **Remediation Type**: `CONFIG_CHANGE`
+  - **Action Taken**: `Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.`
+  - **Confirmed By**: `sre-oncall-lead`
+  - **Triggering Deployment**: `dep-payment-v2.4.1`
+  - **DevTrace API Token**: Paste the token from your local `.env`.
 - **Action**: Click **"Confirm Resolution & Evolve Graph"**.
 - **Visual**: The green confirmation banner appears: `✔ Resolution Confirmed & Written to FalkorDB` showing resolution ID `res-inc-2026-10-15-checkout-001` with `source: user-confirmed`.
 - **Narration**:
   > "Investigation engines should never persist speculative hypotheses. DevTrace AI requires an authenticated human SRE to confirm the actual fix.
-  > Clicking Confirm executes an atomic Cypher write-back transaction in FalkorDB. It marks the incident RESOLVED, links the resolution to the payment service, and tags it with 'user-confirmed' provenance.
-  > On future incidents exhibiting this error signature, this remediation will immediately surface as verified institutional knowledge.
+  > Clicking Confirm executes an atomic Cypher write-back transaction in FalkorDB. It marks incident A RESOLVED, links the resolution to the payment service, and tags it with 'user-confirmed' provenance."
+
+---
+
+## Scene 5: Institutional Memory in Action — Investigating Incident B (3:15 – 3:45)
+- **Action**: In the incident form at the top, enter Incident B:
+  - **Incident ID / Title**: `inc-2026-10-15-checkout-002`
+  - **Description**: `Checkout failure rates spiking again with persistent payment timeouts on card transactions`
+  - Leave **serviceHint** and **errorHint** empty.
+- **Action**: Click **"Investigate Incident"**.
+- **Visual**: In Section B (Observed Facts / Matched Historical Incidents), observe that **both** resolutions are now returned in recency order:
+  1. `inc-2026-10-15-checkout-001` with resolution `res-inc-2026-10-15-checkout-001` (`source: user-confirmed`): *"Emergency pool size rollback and idle timeout tune on payment datasource"*
+  2. `inc-2026-08-12-pay` with resolution `res-pay-timeout-fix` (`source: synthetic`): *"Increase HikariCP pool size and connection timeout"*
+- **Narration**:
+  > "When a subsequent incident occurs, DevTrace AI's connected graph instantly surfaces the newly confirmed resolution as institutional memory. 
+  > Notice also that Incident A never appears in its own history, preserving strict causal isolation.
   > That is closed-loop operational intelligence with FalkorDB."
+
