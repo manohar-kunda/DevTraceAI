@@ -60,7 +60,7 @@ export function ResolutionForm({
               )}
               {candidateServices.map((svc) => (
                 <option key={svc.id} value={svc.id}>
-                  {svc.name} ({svc.id}) — {svc.group}
+                  {svc.label || svc.name}
                 </option>
               ))}
             </select>

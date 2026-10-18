@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useHashRoute } from './hooks/useHashRoute.js';
 import { useInvestigation } from './hooks/useInvestigation.js';
 import { getGoldenIncident, confirmResolution, getHealth, getIncident } from './api/endpoints.js';
+import { buildResolutionPayload, buildIncidentPayload } from './api/payloads.js';
 import { DEMO_INCIDENT_B, DEMO_RESOLUTION_A } from './demo/demoData.js';
 import { extractCandidateServices } from './utils/format.js';
 import { ErrorBanner } from './components/common/ErrorBanner.jsx';
@@ -10,7 +11,7 @@ import { ResultPage } from './pages/ResultPage.jsx';
 import { ConfirmPage } from './pages/ConfirmPage.jsx';
 
 const INIT_INC = { description: '', serviceHint: '', errorHint: '', startedAt: '', incidentId: '' };
-const INIT_RES = { rootCauseServiceId: '', triggeringDeploymentId: '', resolutionTitle: '', remediationType: 'CONFIG_CHANGE', actionTaken: '', confirmedBy: '' };
+const INIT_RES = { rootCauseServiceId: '', triggeringDeploymentId: '', title: '', resolutionTitle: '', remediationType: 'CONFIG_CHANGE', actionTaken: '', confirmedBy: '' };
 
 export default function App() {
   const [hash, navigate] = useHashRoute('#/describe');
@@ -21,7 +22,6 @@ export default function App() {
   const [resolutionResult, setResolutionResult] = useState(null);
   const [resolving, setResolving] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
-  const [demoStep, setDemoStep] = useState(1);
   const [backendHealth, setBackendHealth] = useState({ checked: false, connected: false });
 
   const setIncField = useCallback((k, v) => setIncForm((p) => ({ ...p, [k]: v })), []);
@@ -32,7 +32,7 @@ export default function App() {
   }, []);
 
   const handleLoadDemoA = useCallback(async () => {
-    inv.clearError(); setIsDemoMode(true); setDemoStep(1);
+    inv.clearError(); setIsDemoMode(true);
     try {
       const d = await getGoldenIncident();
       setIncForm({ description: d.description || '', serviceHint: d.serviceHint || '', errorHint: d.errorHint || '', startedAt: d.startedAt ? String(d.startedAt) : '', incidentId: d.incidentId || '' });
@@ -42,16 +42,15 @@ export default function App() {
   }, [inv]);
 
   const handleLoadDemoB = useCallback(() => {
-    inv.clearError(); setIsDemoMode(true); setDemoStep(4); setIncForm(DEMO_INCIDENT_B); navigate('#/describe');
+    inv.clearError(); setIsDemoMode(true); setIncForm(DEMO_INCIDENT_B); navigate('#/describe');
   }, [inv, navigate]);
 
   const handleInvestigateSubmit = async (e) => {
     e.preventDefault(); setResolutionResult(null);
-    const res = await inv.runInvestigation(incForm);
+    const res = await inv.runInvestigation(buildIncidentPayload(incForm));
     if (res) {
       const top = res.report?.hypotheses?.[0]?.serviceId || res.report?.otherServicesInNeighborhood?.[0]?.id || '';
       setResForm({ ...INIT_RES, rootCauseServiceId: top });
-      if (isDemoMode) setDemoStep(2);
       navigate('#/result');
     }
   };
@@ -65,16 +64,15 @@ export default function App() {
     }
     setResolving(true); inv.clearError();
     try {
-      const payload = { ...resForm, triggeringDeploymentId: resForm.triggeringDeploymentId.trim() || null };
+      const payload = buildResolutionPayload(resForm);
       const resData = await confirmResolution(activeId, payload, token);
       setResolutionResult(resData);
       if (activeId) getIncident(activeId).then((r) => inv.setCurrentIncident(r)).catch(() => {});
-      if (isDemoMode) setDemoStep(3);
     } catch (err) {
       inv.setError({
         title: err.status === 401 ? 'Unauthorized (401)' : (err.title || 'Write-back Failed'),
         detail: err.status === 401 ? "The server rejected the token. It must exactly match DEVTRACE_API_TOKEN in the backend's .env, and the backend must be restarted after .env changes." : (err.detail || 'Could not confirm resolution.'),
-        status: err.status || 500, correlationId: err.correlationId,
+        status: err.status || 500, correlationId: err.correlationId, fieldErrors: err.fieldErrors,
       });
     } finally {
       setResolving(false);
@@ -82,6 +80,12 @@ export default function App() {
   };
 
   const candidateServices = useMemo(() => extractCandidateServices(inv.report), [inv.report]);
+  const currentDemoStep = useMemo(() => {
+    if (hash === '#/result') return 2;
+    if (hash === '#/confirm') return resolutionResult ? 4 : 3;
+    if (incForm.incidentId === DEMO_INCIDENT_B.incidentId) return 4;
+    return 1;
+  }, [hash, resolutionResult, incForm.incidentId]);
 
   return (
     <div className="app-container">
@@ -120,23 +124,23 @@ export default function App() {
           <DescribePage
             form={incForm} setField={setIncField} onSubmit={handleInvestigateSubmit}
             onLoadDemoA={handleLoadDemoA} onLoadDemoB={handleLoadDemoB} loading={inv.isLoading}
-            isDemoMode={isDemoMode} demoStep={demoStep} onNextDemoStep={() => setDemoStep((s) => Math.min(s + 1, 4))}
+            isDemoMode={isDemoMode} demoStep={currentDemoStep} onNextDemoStep={() => navigate('#/result')}
           />
         )}
         {hash === '#/result' && (
           <ResultPage
             report={inv.report} incidentId={incForm.incidentId || inv.currentIncident?.incidentId}
-            onProceedToConfirm={() => navigate('#/confirm')} isDemoMode={isDemoMode} demoStep={demoStep}
-            onNextDemoStep={() => { setDemoStep(3); navigate('#/confirm'); }}
+            onProceedToConfirm={() => navigate('#/confirm')} isDemoMode={isDemoMode} demoStep={currentDemoStep}
+            onNextDemoStep={() => navigate('#/confirm')}
           />
         )}
         {hash === '#/confirm' && (
           <ConfirmPage
             incidentId={incForm.incidentId || inv.currentIncident?.incidentId} candidateServices={candidateServices}
             form={resForm} setField={setResField} token={token} setToken={setToken}
-            onFillDemo={() => setResForm(DEMO_RESOLUTION_A)} onSubmit={handleConfirmResolution} resolving={resolving}
-            resolutionResult={resolutionResult} onTryDemoB={handleLoadDemoB} isDemoMode={isDemoMode}
-            demoStep={demoStep} onNextDemoStep={handleLoadDemoB}
+            onFillDemo={() => setResForm({ ...DEMO_RESOLUTION_A, title: DEMO_RESOLUTION_A.resolutionTitle })}
+            onSubmit={handleConfirmResolution} resolving={resolving} resolutionResult={resolutionResult}
+            onTryDemoB={handleLoadDemoB} isDemoMode={isDemoMode} demoStep={currentDemoStep} onNextDemoStep={handleLoadDemoB}
           />
         )}
       </main>

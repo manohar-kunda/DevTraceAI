@@ -33,6 +33,15 @@ export function ErrorBanner({ error, onDismiss, onRetry }) {
         </div>
       </div>
       <p className="error-banner-detail">{error.detail}</p>
+      {error.fieldErrors && typeof error.fieldErrors === 'object' && (
+        <ul style={{ marginTop: '8px', paddingLeft: '18px', fontSize: '13px' }}>
+          {Object.entries(error.fieldErrors).map(([field, msg]) => (
+            <li key={field}>
+              <strong>{field}:</strong> {msg}
+            </li>
+          ))}
+        </ul>
+      )}
       {error.correlationId && (
         <p className="error-banner-meta">Correlation ID: {error.correlationId}</p>
       )}

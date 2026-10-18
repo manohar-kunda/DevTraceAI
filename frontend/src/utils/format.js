@@ -35,15 +35,22 @@ export function extractCandidateServices(report) {
   report?.hypotheses?.forEach((h) => {
     if (h.serviceId && !seen.has(h.serviceId)) {
       seen.add(h.serviceId);
-      list.push({ id: h.serviceId, name: h.serviceName || h.serviceId, group: `Hypothesis #${h.rank} (${h.tier} TIER)` });
+      list.push({
+        id: h.serviceId,
+        name: h.serviceName || h.serviceId,
+        label: `${h.serviceName || h.serviceId} - suspect #${h.rank}`,
+      });
     }
   });
   report?.otherServicesInNeighborhood?.forEach((s) => {
     if (s.id && !seen.has(s.id)) {
       seen.add(s.id);
-      list.push({ id: s.id, name: s.name || s.id, group: `Neighborhood (${s.hops} ${s.hops === 1 ? 'hop' : 'hops'})` });
+      list.push({
+        id: s.id,
+        name: s.name || s.id,
+        label: `${s.name || s.id} - ${s.hops} ${s.hops === 1 ? 'call' : 'calls'} away`,
+      });
     }
   });
   return list;
 }
-

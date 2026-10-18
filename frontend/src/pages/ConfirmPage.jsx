@@ -40,8 +40,11 @@ export function ConfirmPage({
           setRemediationType={(val) => setField('remediationType', val)}
           confirmedBy={form.confirmedBy}
           setConfirmedBy={(val) => setField('confirmedBy', val)}
-          resolutionTitle={form.resolutionTitle}
-          setResolutionTitle={(val) => setField('resolutionTitle', val)}
+          resolutionTitle={form.title || form.resolutionTitle || ''}
+          setResolutionTitle={(val) => {
+            setField('resolutionTitle', val);
+            setField('title', val);
+          }}
           actionTaken={form.actionTaken}
           setActionTaken={(val) => setField('actionTaken', val)}
           triggeringDeploymentId={form.triggeringDeploymentId}

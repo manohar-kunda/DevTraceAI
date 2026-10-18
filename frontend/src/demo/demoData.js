@@ -17,6 +17,7 @@ export const DEMO_INCIDENT_B = {
 
 export const DEMO_RESOLUTION_A = {
   rootCauseServiceId: 'service-payment',
+  title: 'Emergency pool size rollback and idle timeout tune on payment datasource',
   resolutionTitle: 'Emergency pool size rollback and idle timeout tune on payment datasource',
   remediationType: 'CONFIG_CHANGE',
   actionTaken: 'Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.',

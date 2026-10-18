@@ -1,7 +1,9 @@
 /**
- * HTTP client wrapper with RFC 7807 ProblemDetail parsing.
+ * HTTP client wrapper with robust RFC 7807 ProblemDetail parsing.
+ * Supports application/problem+json, application/json, and text/plain.
  * Sanitizes errors so internal stack traces are never surfaced to the UI.
  */
+import { parseErrorResponse } from './payloads.js';
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8085';
 
@@ -17,21 +19,18 @@ export async function request(path, options = {}) {
     headers,
   });
 
-  const contentType = response.headers.get('content-type');
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
   let data = null;
-  if (contentType && contentType.includes('application/json')) {
+  let text = null;
+
+  if (contentType.includes('json')) {
     data = await response.json().catch(() => null);
+  } else {
+    text = await response.text().catch(() => null);
   }
 
   if (!response.ok) {
-    const errorObj = {
-      status: response.status,
-      title: data?.title || (response.status === 401 ? 'Unauthorized (401)' : 'Request Failed'),
-      detail: data?.detail || data?.message || `HTTP error ${response.status}`,
-      correlationId: data?.correlationId || null,
-      instance: data?.instance || path,
-      type: data?.type || null,
-    };
+    const errorObj = parseErrorResponse(response.status, contentType, data, text, path);
     throw errorObj;
   }
 
