@@ -7,7 +7,6 @@
 ---
 
 ## Pre-Recording Checklist
-## Pre-Recording Checklist
 - [ ] Docker Desktop is running and FalkorDB container is active (`docker compose ps`).
 - [ ] Database reset has been run to ensure the clean golden state (`devtrace` graph has 24 nodes, 26 relationships, and zero user-confirmed resolutions):
   ```bash
@@ -19,7 +18,7 @@
 - [ ] Backend is running on port 8085 (`mvn spring-boot:run`).
 - [ ] Frontend dev server is running on port 5173 (`npm run dev` in `frontend/`).
 - [ ] Browser window is sized to 1080p (1920x1080) with zoom set to 100% or 110% for clear readability.
-- [ ] `DEVTRACE_API_TOKEN` is copied from your local `.env` and ready to paste.
+- [ ] **Copy API token to clipboard before recording**: Copy your `DEVTRACE_API_TOKEN` value from `.env` to your system clipboard **before starting the screen recording** so you never open, view, or show `.env` on camera.
 
 ---
 
@@ -62,7 +61,7 @@
   - **Action Taken**: `Restored HikariCP maximumPoolSize from 10 back to 50, raised connectionTimeout to 30000ms, and verified connection wait queue dropped to zero under load.`
   - **Confirmed By**: `sre-oncall-lead`
   - **Triggering Deployment**: blank
-- **Action**: Paste your `DEVTRACE_API_TOKEN` copied from `.env` into the password field.
+- **Action**: Paste your `DEVTRACE_API_TOKEN` (copied previously to clipboard) into the masked **DevTrace API Token** field (never open `.env` on camera).
 - **Action**: Click **"Confirm Resolution & Evolve Graph"**.
 - **Visual**: The green confirmation banner appears: `✔ Resolution Confirmed & Written to FalkorDB` showing resolution ID `res-inc-2026-10-15-checkout-001` with `source: user-confirmed`.
 - **Narration**:
@@ -87,4 +86,10 @@
   > "When a subsequent incident occurs, DevTrace AI's connected graph instantly surfaces the newly confirmed resolution as institutional memory. 
   > Notice also that Incident A never appears in its own history, preserving strict causal isolation.
   > That is closed-loop operational intelligence with FalkorDB."
+
+---
+
+## Post-Demo / Post-Recording Steps
+- [ ] **Clear clipboard history**: If desired, clear your system clipboard history (e.g. `Win + V` -> "Clear all" on Windows, or copy a neutral string) so the token value does not linger in memory or clipboard managers.
+- [ ] **Reset database**: If recording multiple takes, re-run the database reset step so each take starts from the clean 24-node golden seed state.
 

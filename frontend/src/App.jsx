@@ -175,8 +175,8 @@ export default function App() {
 
     if (!token.trim()) {
       setError({
-        title: 'Unauthorized',
-        detail: 'DevTrace API token is required to execute confirmation write-back.',
+        title: 'Authentication Required',
+        detail: 'Enter the API token before confirming.',
         status: 401,
       });
       return;
@@ -217,9 +217,12 @@ export default function App() {
         setCurrentIncident(incData);
       }
     } catch (err) {
+      const is401 = err.status === 401;
       setError({
-        title: err.title || 'Write-back Failed',
-        detail: err.detail || err.message || 'Could not confirm resolution.',
+        title: is401 ? 'Unauthorized (401)' : (err.title || 'Write-back Failed'),
+        detail: is401
+          ? "The server rejected the token. It must exactly match DEVTRACE_API_TOKEN in the backend's .env, and the backend must be restarted after .env changes."
+          : (err.detail || err.message || 'Could not confirm resolution.'),
         status: err.status || 500,
         correlationId: err.correlationId,
       });
@@ -730,9 +733,24 @@ export default function App() {
                     autoComplete="off"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
-                    placeholder="Enter DEVTRACE_API_TOKEN"
+                    placeholder="Paste the DEVTRACE_API_TOKEN value from .env"
                     required
                   />
+                  <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', lineHeight: 1.5 }}>
+                    This is the shared secret you set as DEVTRACE_API_TOKEN in the backend's .env file (project root). The server only accepts a confirmed resolution when this value matches. It is not an account password or an external API key, and the browser does not store it.
+                  </p>
+                  <details style={{ marginTop: '8px', fontSize: '12px', color: '#475569', background: '#f8fafc', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#0284c7' }}>
+                      Where do I find the token?
+                    </summary>
+                    <ol style={{ paddingLeft: '18px', marginTop: '6px', marginBottom: '2px', lineHeight: 1.6 }}>
+                      <li>Open the <code>.env</code> file in the project root (for example: <code>notepad .env</code>)</li>
+                      <li>Copy the text after <code>DEVTRACE_API_TOKEN=</code> (no quotes or spaces)</li>
+                      <li>Paste it here</li>
+                      <li>If you haven't set one yet, copy <code>.env.example</code> to <code>.env</code>, set a token, and restart the backend</li>
+                      <li>If your backend was started with a token in its shell environment, use that value instead</li>
+                    </ol>
+                  </details>
                 </div>
               </div>
             </div>

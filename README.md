@@ -200,6 +200,27 @@ FALKORDB_GRAPH=devtrace
 DEVTRACE_API_TOKEN=your_secure_random_api_token_here
 ```
 
+### What is the DevTrace API token?
+
+- **What it protects**: It protects **only the resolution confirmation write endpoint** (`POST /api/incidents/{id}/resolution`). All read operations (health checks, graph queries, incident inspection) and the core investigation engine (`POST /api/investigate`) are public and do not require authentication.
+- **Who creates it**: The token is **created by you (the user)**. It is not an external API key, account password, or third-party service credential.
+- **How to generate one**: Generate any long, high-entropy random string:
+  - Linux / macOS / Git Bash: `openssl rand -hex 32`
+  - Windows PowerShell: `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 32 | % {[char]$_})`
+- **Where it goes**: In the `.env` file located in the project root:
+  ```env
+  DEVTRACE_API_TOKEN=<your-token-from-.env>
+  ```
+- **How it is sent**:
+  - **REST API / curl**: Via the `X-DevTrace-Token` HTTP header (e.g., `-H "X-DevTrace-Token: <your-token-from-.env>"`).
+  - **Web Dashboard**: Entered into the masked **DevTrace API Token** input field in the resolution form before clicking "Confirm Resolution & Evolve Graph". The browser does not store or persist this token.
+- **Backend restart requirement**: The Spring Boot backend reads `.env` on startup via `EnvLoader`. If you create or modify `.env`, you **must restart the backend** for changes to take effect.
+- **Terminal environment variable precedence**: In `EnvLoader.java`, if `DEVTRACE_API_TOKEN` is already exported or set in your terminal shell environment (`System.getenv()` or `System.getProperty()`), **the terminal environment variable takes precedence over `.env`**. If you set or changed the token in `.env` but your shell has an existing `$env:DEVTRACE_API_TOKEN` / `export DEVTRACE_API_TOKEN`, the server will continue using the shell's value until unset or updated in the shell.
+- **Never commit `.env`**: `.env` is listed in `.gitignore` and must never be tracked or committed to version control.
+- **How to rotate it**: Edit `DEVTRACE_API_TOKEN` in `.env` (or change your shell environment variable) and restart the Spring Boot backend (`mvn spring-boot:run`).
+- **Fail-closed behavior**: If `DEVTRACE_API_TOKEN` is left unset or empty, the backend fails closed: the resolution confirmation endpoint is automatically disabled and all confirmation attempts return `401 Unauthorized` with:
+  `"The resolution confirmation endpoint is disabled because DEVTRACE_API_TOKEN is not configured on the server."`
+
 ### 2. Start FalkorDB
 ```bash
 docker compose up -d
@@ -260,7 +281,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 ## 8. Demo Walkthrough of the Golden Scenario
 
 1. Open [http://localhost:5173](http://localhost:5173). Notice the **`● Synthetic Demo Data`** pill.
-2. Click **"Load Demo Golden Incident"**:
+2. Click **"Load demo incident A (DEMO)"**:
    - Pre-fills incident description: `"Checkout requests are failing after the latest deployment and payment timeouts have increased"`.
    - Leaves service and error hints blank, demonstrating the **free-text keyword resolver**.
 3. Click **"Investigate Incident"**:
@@ -272,9 +293,13 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
    - **Topological Paths**: Displays `service-checkout ──[:DEPENDS_ON]──► service-order ──[:DEPENDS_ON]──► service-payment` (2 hops).
    - **Ignored Changes**: `dep-notification-v1.8.0` is ignored because `notification-service` is outside the dependency neighborhood.
 4. **Human-in-the-Loop Confirmation**:
-   - Enter remediation details and enter your `DEVTRACE_API_TOKEN`.
+   - Click **"Fill demo resolution (DEMO)"** (or select root cause `service-payment` and fill remediation details).
+   - Paste your `DEVTRACE_API_TOKEN` value into the masked token field.
    - Click **"Confirm Resolution & Evolve Graph"**.
    - Verified: Green confirmation banner appears with new resolution ID `res-inc-2026-10-15-checkout-001` marked `source: user-confirmed`.
+5. **Act 4 Verification (Institutional Memory)**:
+   - Click **"Load demo incident B (Act 4) [DEMO]"** and click **"Investigate Incident"**.
+   - DevTrace AI immediately surfaces the newly confirmed remediation from incident A in Section B as verified historical evidence.
 
 For exact step-by-step recording instructions, see [docs/DEMO_SCRIPT.md](file:///C:/Users/manoh/DevTraceAI/docs/DEMO_SCRIPT.md).
 
