@@ -190,7 +190,7 @@ copy .env.example .env
 ```
 Edit `.env` and configure with your own generated secrets:
 > [!IMPORTANT]
-> Generate your own random `DEVTRACE_API_TOKEN` and `FALKORDB_PASSWORD` (e.g., using `openssl rand -hex 24` or PowerShell `[Convert]::ToHexString((1..32 | % { Get-Random -Max 256 }))`). Never reuse example strings, and never commit `.env` to version control.
+> Generate your own random `DEVTRACE_API_TOKEN` and `FALKORDB_PASSWORD` (e.g., using `openssl rand -hex 24` or PowerShell `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 32 | % {[char]$_})`). Never reuse example strings, and never commit `.env` to version control.
 
 ```env
 FALKORDB_HOST=127.0.0.1
@@ -212,14 +212,18 @@ docker compose ps
 ### 3. Reset or Seed the Database
 To reset the development graph `devtrace` to the clean golden state before running a demo:
 ```bash
-# Set flags in environment and launch seed bootstrap:
-# Windows PowerShell:
+# Windows PowerShell (set for one run and unset immediately afterwards):
 $env:DEVTRACE_SEED_ENABLED="true"; $env:DEVTRACE_SEED_RESET="true"; mvn spring-boot:run
+# After seed completes, press Ctrl+C and unset the variables:
+Remove-Item Env:DEVTRACE_SEED_RESET
+Remove-Item Env:DEVTRACE_SEED_ENABLED
 
-# Linux / macOS:
+# Linux / macOS (scoped to single process invocation):
 DEVTRACE_SEED_ENABLED=true DEVTRACE_SEED_RESET=true mvn spring-boot:run
 ```
-*(Stop with Ctrl+C after seeding completes, or leave running as backend).*
+
+> [!WARNING]
+> Always unset `DEVTRACE_SEED_RESET` and `DEVTRACE_SEED_ENABLED` after seeding. Leaving them set in your shell environment will cause the graph to be reset on every subsequent backend startup, wiping any user-confirmed resolutions.
 
 ### 4. Run the Test Suites
 - **Offline Unit Tests** (requires NO Docker or FalkorDB running):
@@ -283,11 +287,16 @@ In accordance with hackathon guidelines, the development of DevTrace AI utilized
 - **AI Tools & Models Used**:
   - Tool / Assistant: `[INSERT TOOLS USED: e.g. Google Antigravity / Gemini 2.5 Pro / Claude 3.7 Sonnet]`
   - Models: `[INSERT SPECIFIC MODEL IDENTIFIERS]`
+
+- **My Contribution (Human Decisions and Verification)**:
+  - `[INSERT YOUR CONTRIBUTIONS: Architecture decisions, schema design, test verification, operational requirements, etc.]`
+  - `[INSERT SPECIFIC VERIFICATION PERFORMED: manual review of Cypher traversal queries, verification of UI behavior in browser, validation of ranking tiers, etc.]`
+
 - **Human Engineering & Architecture**:
   - Designed the FalkorDB graph schema, bidirectional relationship semantics, and constraint models.
   - Formulated the 4-tier ranking rules and deterministic tie-breaking logic.
   - Specified the fail-closed security boundary, RFC 7807 problem details error mapping, and atomic Cypher write-back transactions.
-  - Authored and verified all test assertions across the 40 Surefire and 30 Failsafe test suites.
+  - Authored and verified all test assertions across the 40 Surefire and 32 Failsafe test suites.
 - **AI-Assisted Contributions**:
   - Scaffolding repetitive boilerplate (DTO records, MockMvc controller test setups, CSS utility layout).
   - Drafting initial Cypher syntax patterns and Spring Boot configuration bindings.

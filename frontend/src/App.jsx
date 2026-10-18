@@ -417,7 +417,7 @@ export default function App() {
                 {report.entryPoints?.service?.serviceName || 'Unknown'} ({report.entryPoints?.service?.serviceId || 'None'})
               </span>
               <div style={{ fontSize: '12px', color: '#1e293b', marginTop: '6px' }}>
-                <strong>Matched Phrase:</strong> <code>'{report.entryPoints?.service?.evidence?.matchedToken || 'N/A'}'</code> | <strong>Match Source:</strong> <code>{report.entryPoints?.service?.evidence?.matchSource || 'N/A'}</code>
+                <strong>Matched phrase:</strong> <code>'{report.entryPoints?.service?.evidence?.matchedToken || 'N/A'}'</code> | <strong>Match Source:</strong> <code>{report.entryPoints?.service?.evidence?.matchSource || 'N/A'}</code>
               </div>
               {report.entryPoints?.service?.evidence?.explanation && (
                 <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
@@ -431,7 +431,7 @@ export default function App() {
                 {report.entryPoints?.errorSignature?.errorType || 'Unknown'} ({report.entryPoints?.errorSignature?.signatureId || 'None'})
               </span>
               <div style={{ fontSize: '12px', color: '#1e293b', marginTop: '6px' }}>
-                <strong>Matched Phrase:</strong> <code>'{report.entryPoints?.errorSignature?.evidence?.matchedToken || 'N/A'}'</code> | <strong>Match Source:</strong> <code>{report.entryPoints?.errorSignature?.evidence?.matchSource || 'N/A'}</code>
+                <strong>Matched phrase:</strong> <code>'{report.entryPoints?.errorSignature?.evidence?.matchedToken || 'N/A'}'</code> | <strong>Match Source:</strong> <code>{report.entryPoints?.errorSignature?.evidence?.matchSource || 'N/A'}</code>
               </div>
               {report.entryPoints?.errorSignature?.pattern && (
                 <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
