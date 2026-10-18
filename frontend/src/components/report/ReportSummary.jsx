@@ -2,7 +2,7 @@ import React from 'react';
 import { TierBadge, SourceBadge, StatusBadge } from '../common/Badge.jsx';
 import { formatMinutesBefore } from '../../utils/format.js';
 
-export function ReportSummary({ report, incidentId }) {
+export function ReportSummary({ report, incidentId, generatedAt, onRerun }) {
   if (!report) return null;
 
   const topHypothesis = report.hypotheses && report.hypotheses.length > 0
@@ -33,9 +33,22 @@ export function ReportSummary({ report, incidentId }) {
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-subtle)' }}>
             Incident ID: <code>{report.requestEcho?.incidentId || incidentId}</code>
+            {generatedAt && (
+              <span> | Report generated at: <code>{generatedAt}</code></span>
+            )}
           </p>
         </div>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {onRerun && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onRerun}
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+            >
+              ↻ Re-run investigation
+            </button>
+          )}
           <StatusBadge status={report.status} />
         </div>
       </div>

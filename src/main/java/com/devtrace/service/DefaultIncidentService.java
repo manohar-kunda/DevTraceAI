@@ -190,7 +190,7 @@ public class DefaultIncidentService implements IncidentService {
     }
 
     @Override
-    public ResolutionConfirmationResult confirmResolution(String graphName, String incidentId, ConfirmResolutionRequest request) {
+    public synchronized ResolutionConfirmationResult confirmResolution(String graphName, String incidentId, ConfirmResolutionRequest request) {
         Objects.requireNonNull(graphName, "graphName cannot be null");
         Objects.requireNonNull(incidentId, "incidentId cannot be null");
         Objects.requireNonNull(request, "request cannot be null");

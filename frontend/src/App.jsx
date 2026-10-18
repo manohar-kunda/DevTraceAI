@@ -131,7 +131,8 @@ export default function App() {
           <ResultPage
             report={inv.report} incidentId={incForm.incidentId || inv.currentIncident?.incidentId}
             onProceedToConfirm={() => navigate('#/confirm')} isDemoMode={isDemoMode} demoStep={currentDemoStep}
-            onNextDemoStep={() => navigate('#/confirm')}
+            onNextDemoStep={() => navigate('#/confirm')} generatedAt={inv.generatedAt}
+            onRerun={() => inv.runInvestigation(buildIncidentPayload(incForm))}
           />
         )}
         {hash === '#/confirm' && (

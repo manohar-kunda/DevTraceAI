@@ -20,6 +20,8 @@ export function ResultPage({
   isDemoMode,
   demoStep,
   onNextDemoStep,
+  generatedAt,
+  onRerun,
 }) {
   useEffect(() => {
     const heading = document.getElementById('report-heading');
@@ -50,7 +52,7 @@ export function ResultPage({
 
       <Section>
         {/* 1. Lead Summary Card */}
-        <ReportSummary report={report} incidentId={incidentId} />
+        <ReportSummary report={report} incidentId={incidentId} generatedAt={generatedAt} onRerun={onRerun} />
 
         {/* Action Button to Proceed to Confirm Step */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', marginBottom: '16px' }}>

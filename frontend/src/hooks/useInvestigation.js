@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { createIncident, investigate } from '../api/endpoints.js';
 
 export function useInvestigation() {
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
   const [report, setReport] = useState(null);
+  const [generatedAt, setGeneratedAt] = useState(null);
   const [currentIncident, setCurrentIncident] = useState(null);
   const [error, setError] = useState(null);
+  const lastRequestIdRef = useRef(0);
 
   const runInvestigation = useCallback(async (formValues) => {
     const { description, serviceHint, errorHint, startedAt, incidentId } = formValues;
@@ -19,6 +21,7 @@ export function useInvestigation() {
       return null;
     }
 
+    const currentReqId = ++lastRequestIdRef.current;
     setStatus('loading');
     setError(null);
     setReport(null);
@@ -35,14 +38,19 @@ export function useInvestigation() {
     try {
       // 1. Create / ensure incident
       const inc = await createIncident(payload);
+      if (currentReqId !== lastRequestIdRef.current) return null; // Stale request check
       setCurrentIncident(inc);
 
       // 2. Perform investigation
       const rep = await investigate(targetId, payload);
+      if (currentReqId !== lastRequestIdRef.current) return null; // Stale request check
+
       setReport(rep);
+      setGeneratedAt(new Date().toISOString());
       setStatus('success');
       return { incident: inc, report: rep };
     } catch (err) {
+      if (currentReqId !== lastRequestIdRef.current) return null; // Ignore stale errors
       setError({
         title: err.title || 'Investigation Failed',
         detail: err.detail || err.message || 'An unexpected error occurred during investigation.',
@@ -58,6 +66,7 @@ export function useInvestigation() {
   const reset = useCallback(() => {
     setStatus('idle');
     setReport(null);
+    setGeneratedAt(null);
     setCurrentIncident(null);
     setError(null);
   }, []);
@@ -66,6 +75,7 @@ export function useInvestigation() {
     status,
     isLoading: status === 'loading',
     report,
+    generatedAt,
     setReport,
     currentIncident,
     setCurrentIncident,
