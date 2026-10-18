@@ -228,10 +228,11 @@ Engine diagnostics are strictly read-only. Knowledge graph evolution occurs only
 ## 7. Setup & Execution Guide
 
 ### Prerequisites
-- **Java**: Minimum Java 25 LTS (tested and verified with OpenJDK `25.0.4.1`)
-- **Maven**: 3.9+ (tested and verified with Apache Maven `3.9.16`)
+Tested with: Java 25.0.4.1, Node 24.x, Maven 3.9.x, Docker Desktop.
+- **Java**: Java 25 LTS (tested with OpenJDK `25.0.4.1`)
+- **Maven**: Maven 3.9.x (tested with Apache Maven `3.9.16`)
 - **Docker**: Docker Desktop with Compose v2
-- **Node.js**: Minimum Node.js 20+ required for the native `node --test` regression suite (tested and verified with Node `v24.21.0`, npm `11.19.0`)
+- **Node.js**: Node 24.x (tested with Node `v24.21.0`, npm `11.19.0`). `npm test` needs Node 22 or newer (the test script uses a glob pattern).
 
 ### 1. Environment Configuration
 Copy `.env.example` to `.env` and set your credentials:
